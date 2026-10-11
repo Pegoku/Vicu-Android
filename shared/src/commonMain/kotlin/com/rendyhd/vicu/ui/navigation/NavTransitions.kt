@@ -71,11 +71,16 @@ internal const val SHARED_AXIS_DP = 30
  *
  * [isOnBackStack] tells a step into a child project (the parent stays on the back stack under it)
  * from a project chosen in the bottom bar or the drawer (the open one is popped).
+ *
+ * With [reveal], a forward cross-fade waits for the arriving screen's content: the NavHost shows
+ * that screen at once and holds the old one under it ([REVEAL_HOLD_MS]), and the screen fades
+ * itself in when it is ready ([RevealedScreen]). Without it (tests) the NavHost does the fade.
  */
 internal class NavTransitions(
     private val axisPx: Int,
     private val rtl: Boolean = false,
     private val isOnBackStack: (NavBackStackEntry) -> Boolean = { true },
+    private val reveal: ScreenReveal? = null,
 ) {
     /** Forward is toward the end of the line: right in left-to-right, left in right-to-left. */
     internal fun axisOffset(forward: Boolean): Int = if (forward != rtl) axisPx else -axisPx
@@ -98,6 +103,21 @@ internal class NavTransitions(
     /** The old screen under an arriving one: kept as it is until it is covered, then dropped. */
     private val holdUntilCovered = fadeOut(snap(delayMillis = VicuMotion.pageInMs))
 
+    /** The same while the arriving screen waits for its content; it stops drawing the old one itself. */
+    private val holdForReveal = fadeOut(snap(delayMillis = REVEAL_HOLD_MS))
+
+    private fun crossFadeEnter(scope: AnimatedContentTransitionScope<NavBackStackEntry>): EnterTransition {
+        val reveal = reveal ?: return crossFadeIn
+        reveal.arriving(scope.targetState.id)
+        return EnterTransition.None
+    }
+
+    private fun crossFadeExit(scope: AnimatedContentTransitionScope<NavBackStackEntry>): ExitTransition {
+        val reveal = reveal ?: return holdUntilCovered
+        reveal.leaving(scope.initialState.id, coveredBy = scope.targetState.id)
+        return holdForReveal
+    }
+
     /** A screen arriving from the end side (going forward) or the start side (coming back). */
     private fun slideIn(forward: Boolean): EnterTransition = fadeInLate + slideInHorizontally(
         VicuMotion.defaultSpatialSpec<IntOffset>(),
@@ -109,10 +129,10 @@ internal class NavTransitions(
     ) { -axisOffset(forward) }
 
     fun enter(scope: AnimatedContentTransitionScope<NavBackStackEntry>): EnterTransition =
-        if (kind(scope, pop = false) == NavTransitionKind.SharedAxisX) slideIn(forward = true) else crossFadeIn
+        if (kind(scope, pop = false) == NavTransitionKind.SharedAxisX) slideIn(forward = true) else crossFadeEnter(scope)
 
     fun exit(scope: AnimatedContentTransitionScope<NavBackStackEntry>): ExitTransition =
-        if (kind(scope, pop = false) == NavTransitionKind.SharedAxisX) slideOut(forward = true) else holdUntilCovered
+        if (kind(scope, pop = false) == NavTransitionKind.SharedAxisX) slideOut(forward = true) else crossFadeExit(scope)
 
     fun popEnter(scope: AnimatedContentTransitionScope<NavBackStackEntry>): EnterTransition =
         if (kind(scope, pop = true) == NavTransitionKind.SharedAxisX) slideIn(forward = false) else EnterTransition.None

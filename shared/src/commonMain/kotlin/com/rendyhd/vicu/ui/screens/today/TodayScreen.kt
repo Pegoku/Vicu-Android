@@ -1,5 +1,6 @@
 package com.rendyhd.vicu.ui.screens.today
 
+import com.rendyhd.vicu.ui.navigation.ScreenReady
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -74,6 +75,8 @@ fun TodayScreen(
     viewModel: TodayViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // A screen navigated to fades in once this is true (ScreenReveal).
+    ScreenReady(!state.isLoading)
 
     // Rows kept on screen after completing them are let go when the screen is left.
     val snackbarHostState = remember { SnackbarHostState() }

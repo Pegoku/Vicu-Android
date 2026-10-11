@@ -1,5 +1,6 @@
 package com.rendyhd.vicu.ui.screens.logbook
 
+import com.rendyhd.vicu.ui.navigation.ScreenReady
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +48,8 @@ fun LogbookScreen(
     viewModel: LogbookViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // A screen navigated to fades in once this is true (ScreenReveal).
+    ScreenReady(!state.isLoading)
     val today = LocalToday.current
     val zone = LocalClockDay.current.zone
     val dateFormat = LocalDateFormat.current

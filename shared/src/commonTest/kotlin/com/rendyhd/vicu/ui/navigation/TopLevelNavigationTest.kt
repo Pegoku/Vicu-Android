@@ -8,12 +8,12 @@ import kotlin.test.assertNotEquals
 class TopLevelNavigationTest {
 
     @Test
-    fun `smart lists and settings keep their state and reuse the entry`() {
+    fun `smart lists and settings are restored and reuse the entry`() {
         listOf(TodayRoute, UpcomingRoute, AnytimeRoute, LogbookRoute, ReviewRoute, RoutinesRoute, SettingsRoute)
             .forEach { route ->
                 assertEquals(
                     TopLevelNavOptions(saveState = true, launchSingleTop = true, restoreState = true),
-                    topLevelNavOptions(route),
+                    topLevelNavOptions(route, leavingKeepsState = true),
                     route.toString(),
                 )
             }
@@ -22,8 +22,8 @@ class TopLevelNavigationTest {
     @Test
     fun `the Inbox is the root, so it is re-created rather than restored`() {
         assertEquals(
-            TopLevelNavOptions(saveState = false, launchSingleTop = true, restoreState = false),
-            topLevelNavOptions(InboxRoute),
+            TopLevelNavOptions(saveState = true, launchSingleTop = true, restoreState = false),
+            topLevelNavOptions(InboxRoute, leavingKeepsState = true),
         )
     }
 
@@ -31,10 +31,24 @@ class TopLevelNavigationTest {
     fun `parameterized destinations never share an entry or a saved state`() {
         listOf(ProjectRoute(3L), TagRoute(4L), CustomListRoute("x")).forEach { route ->
             assertEquals(
-                TopLevelNavOptions(saveState = false, launchSingleTop = false, restoreState = false),
-                topLevelNavOptions(route),
+                TopLevelNavOptions(saveState = true, launchSingleTop = false, restoreState = false),
+                topLevelNavOptions(route, leavingKeepsState = true),
                 route.toString(),
             )
+        }
+    }
+
+    @Test
+    fun `a smart list being left keeps its state wherever the move goes, the Inbox and projects included`() {
+        listOf(InboxRoute, TodayRoute, ProjectRoute(3L), CustomListRoute("x")).forEach { route ->
+            assertEquals(true, topLevelNavOptions(route, leavingKeepsState = true).saveState, route.toString())
+        }
+    }
+
+    @Test
+    fun `a project, tag or list being left saves nothing, since it is never restored`() {
+        listOf(InboxRoute, TodayRoute, ProjectRoute(3L)).forEach { route ->
+            assertEquals(false, topLevelNavOptions(route, leavingKeepsState = false).saveState, route.toString())
         }
     }
 

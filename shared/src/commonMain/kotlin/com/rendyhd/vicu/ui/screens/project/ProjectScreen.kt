@@ -1,5 +1,6 @@
 package com.rendyhd.vicu.ui.screens.project
 
+import com.rendyhd.vicu.ui.navigation.ScreenReady
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
@@ -93,6 +94,8 @@ fun ProjectScreen(
     viewModel: ProjectViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // A screen navigated to fades in once this is true (ScreenReveal).
+    ScreenReady(!state.isLoading)
     val menu by viewModel.menu.collectAsStateWithLifecycle()
     val exit by viewModel.exit.collectAsStateWithLifecycle()
     val reviewUndo by viewModel.reviewUndo.collectAsStateWithLifecycle()
