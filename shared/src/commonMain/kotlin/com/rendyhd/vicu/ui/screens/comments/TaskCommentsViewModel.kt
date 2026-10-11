@@ -2,11 +2,13 @@ package com.rendyhd.vicu.ui.screens.comments
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rendyhd.vicu.auth.TokenStorage
 import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.domain.model.TaskComment
 import com.rendyhd.vicu.domain.repository.CollaborationRepository
 import com.rendyhd.vicu.domain.repository.TaskRepository
 import com.rendyhd.vicu.util.AppMessages
+import com.rendyhd.vicu.util.Collaboration
 import com.rendyhd.vicu.util.NetworkResult
 import com.rendyhd.vicu.util.postIfRefused
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -34,6 +37,8 @@ data class TaskCommentsUiState(
     val error: String? = null,
     /** "Notify me": null while not known. */
     val subscribed: Boolean? = null,
+    /** Whether Notify me is offered: not with an API token, which may not follow tasks (section 9.7). */
+    val canFollow: Boolean = false,
 )
 
 /** Where the thread of the open task stands beyond what Room holds. */
@@ -56,18 +61,20 @@ class TaskCommentsViewModel(
     private val collaboration: CollaborationRepository,
     private val taskRepository: TaskRepository,
     private val appMessages: AppMessages,
+    private val tokenStorage: TokenStorage,
 ) : ViewModel() {
 
     private val taskId = MutableStateFlow(0L)
     private val status = MutableStateFlow(ThreadStatus())
     private var openJob: Job? = null
+    private val canFollow = tokenStorage.authMethodFlow.map(Collaboration::canFollowTasks)
 
     val uiState: StateFlow<TaskCommentsUiState> = taskId
         .flatMapLatest { id ->
             if (id == 0L) {
                 flowOf(TaskCommentsUiState())
             } else {
-                combine(taskRepository.getById(id), collaboration.comments(id), status) { task, comments, s ->
+                combine(taskRepository.getById(id), collaboration.comments(id), status, canFollow) { task, comments, s, follow ->
                     TaskCommentsUiState(
                         taskId = id,
                         task = task,
@@ -77,6 +84,7 @@ class TaskCommentsViewModel(
                         loadingOlder = s.loadingOlder,
                         error = s.error,
                         subscribed = s.subscribed,
+                        canFollow = follow,
                     )
                 }
             }
@@ -93,6 +101,7 @@ class TaskCommentsViewModel(
         openJob = viewModelScope.launch {
             launch { collaboration.markRead(id) }
             launch {
+                if (!Collaboration.canFollowTasks(tokenStorage.getAuthMethod())) return@launch
                 val subscribed = collaboration.isSubscribed(id)
                 if (subscribed is NetworkResult.Success) status.update { it.copy(subscribed = subscribed.data) }
             }

@@ -1,5 +1,6 @@
 package com.rendyhd.vicu.ui.screens.review
 
+import com.rendyhd.vicu.ui.navigation.ScreenReady
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +68,8 @@ fun ReviewScreen(
     viewModel: ReviewViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // A screen navigated to fades in once this is true (ScreenReveal).
+    ScreenReady(!state.isLoading)
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.error) {

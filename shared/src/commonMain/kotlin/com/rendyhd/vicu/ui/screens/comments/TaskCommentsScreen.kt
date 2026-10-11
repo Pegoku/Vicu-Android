@@ -253,20 +253,23 @@ fun TaskCommentsScreen(
                         }
                     },
                     actions = {
-                        val on = state.subscribed == true
-                        IconToggleButton(
-                            checked = on,
-                            onCheckedChange = viewModel::setSubscribed,
-                            enabled = state.subscribed != null,
-                            colors = IconButtonDefaults.iconToggleButtonColors(
-                                checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            ),
-                        ) {
-                            Icon(
-                                imageVector = if (on) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationsNone,
-                                contentDescription = if (on) "Notifications on for this task" else "Notify me about new comments",
-                            )
+                        // Not offered with an API token: Vikunja does not let tokens follow tasks (section 9.7).
+                        if (state.canFollow) {
+                            val on = state.subscribed == true
+                            IconToggleButton(
+                                checked = on,
+                                onCheckedChange = viewModel::setSubscribed,
+                                enabled = state.subscribed != null,
+                                colors = IconButtonDefaults.iconToggleButtonColors(
+                                    checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
+                            ) {
+                                Icon(
+                                    imageVector = if (on) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationsNone,
+                                    contentDescription = if (on) "Notifications on for this task" else "Notify me about new comments",
+                                )
+                            }
                         }
                     },
                 )

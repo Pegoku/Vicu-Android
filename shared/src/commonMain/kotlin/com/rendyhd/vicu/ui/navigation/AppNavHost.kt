@@ -8,6 +8,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -43,8 +45,14 @@ fun AppNavHost(
     val notificationPermission: NotificationPermissionCoordinator = koinInject()
     val axisPx = with(LocalDensity.current) { SHARED_AXIS_DP.dp.roundToPx() }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val reveal = remember { ScreenReveal() }
     val transitions = remember(axisPx, rtl, navController) {
-        NavTransitions(axisPx, rtl) { entry -> navController.currentBackStack.value.any { it.id == entry.id } }
+        NavTransitions(
+            axisPx,
+            rtl,
+            isOnBackStack = { entry -> navController.currentBackStack.value.any { it.id == entry.id } },
+            reveal = reveal,
+        )
     }
     NavHost(
         navController = navController,
@@ -55,7 +63,7 @@ fun AppNavHost(
         popEnterTransition = { transitions.popEnter(this) },
         popExitTransition = { transitions.popExit(this) },
     ) {
-        composable<SetupRoute> {
+        screen<SetupRoute>(reveal) {
             SetupScreen(
                 onSetupComplete = {
                     navController.navigate(InboxRoute) {
@@ -66,7 +74,7 @@ fun AppNavHost(
                 },
             )
         }
-        composable<InboxRoute> {
+        screen<InboxRoute>(reveal) {
             InboxScreen(
                 onTaskClick = onTaskClick,
                 onOpenDrawer = onOpenDrawer,
@@ -74,7 +82,7 @@ fun AppNavHost(
                 onShowTaskEntry = onShowTaskEntry,
             )
         }
-        composable<TodayRoute> {
+        screen<TodayRoute>(reveal) {
             TodayScreen(
                 onTaskClick = onTaskClick,
                 onOpenDrawer = onOpenDrawer,
@@ -84,7 +92,7 @@ fun AppNavHost(
                 onOpenUpcoming = { navController.navigateTopLevel(UpcomingRoute) },
             )
         }
-        composable<UpcomingRoute> {
+        screen<UpcomingRoute>(reveal) {
             UpcomingScreen(
                 onTaskClick = onTaskClick,
                 onOpenDrawer = onOpenDrawer,
@@ -92,7 +100,7 @@ fun AppNavHost(
                 onShowTaskEntry = onShowTaskEntry,
             )
         }
-        composable<AnytimeRoute> {
+        screen<AnytimeRoute>(reveal) {
             AnytimeScreen(
                 onTaskClick = onTaskClick,
                 onOpenDrawer = onOpenDrawer,
@@ -100,27 +108,27 @@ fun AppNavHost(
                 onShowTaskEntry = onShowTaskEntry,
             )
         }
-        composable<LogbookRoute> {
+        screen<LogbookRoute>(reveal) {
             LogbookScreen(
                 onTaskClick = onTaskClick,
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSearch = onNavigateToSearch,
             )
         }
-        composable<ReviewRoute> {
+        screen<ReviewRoute>(reveal) {
             ReviewScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSearch = onNavigateToSearch,
                 onTaskClick = onTaskClick,
             )
         }
-        composable<RoutinesRoute> {
+        screen<RoutinesRoute>(reveal) {
             RoutinesScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSearch = onNavigateToSearch,
             )
         }
-        composable<ProjectRoute> { backStackEntry ->
+        screen<ProjectRoute>(reveal) { backStackEntry ->
             val route = backStackEntry.toRoute<ProjectRoute>()
             ProjectScreen(
                 projectId = route.projectId,
@@ -148,7 +156,7 @@ fun AppNavHost(
                 },
             )
         }
-        composable<TagRoute> { backStackEntry ->
+        screen<TagRoute>(reveal) { backStackEntry ->
             val route = backStackEntry.toRoute<TagRoute>()
             TagScreen(
                 labelId = route.labelId,
@@ -158,7 +166,7 @@ fun AppNavHost(
                 onShowTaskEntry = onShowTaskEntry,
             )
         }
-        composable<CustomListRoute> { backStackEntry ->
+        screen<CustomListRoute>(reveal) { backStackEntry ->
             val route = backStackEntry.toRoute<CustomListRoute>()
             CustomListScreen(
                 listId = route.listId,
@@ -173,16 +181,24 @@ fun AppNavHost(
                 },
             )
         }
-        composable<SearchRoute> {
+        screen<SearchRoute>(reveal) {
             SearchScreen(
                 onTaskClick = onTaskClick,
                 onNavigateBack = { navController.popBackStack() },
             )
         }
-        composable<SettingsRoute> {
+        screen<SettingsRoute>(reveal) {
             SettingsScreen(
                 onOpenDrawer = onOpenDrawer,
             )
         }
     }
+}
+
+/** A destination whose content [ScreenReveal] shows (see [RevealedScreen]). */
+private inline fun <reified T : Any> NavGraphBuilder.screen(
+    reveal: ScreenReveal,
+    noinline content: @Composable (NavBackStackEntry) -> Unit,
+) {
+    composable<T> { entry -> RevealedScreen(entry, reveal) { content(entry) } }
 }

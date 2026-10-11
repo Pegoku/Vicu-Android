@@ -1,5 +1,6 @@
 package com.rendyhd.vicu.ui.screens.customlist
 
+import com.rendyhd.vicu.ui.navigation.ScreenReady
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +62,8 @@ fun CustomListScreen(
     viewModel: CustomListViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // A screen navigated to fades in once this is true (ScreenReveal).
+    ScreenReady(!state.isLoading)
 
     // Rows kept on screen after completing them are let go when the screen is left.
     val projects by viewModel.projects.collectAsStateWithLifecycle()

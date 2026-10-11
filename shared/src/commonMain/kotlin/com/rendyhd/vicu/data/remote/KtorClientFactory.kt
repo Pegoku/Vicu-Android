@@ -5,18 +5,22 @@ import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.HttpSend
+import io.ktor.client.plugins.Sender
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.plugin
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.HttpRequestPipeline
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import io.ktor.http.encodedPath
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 
 object KtorClientFactory {
@@ -26,6 +30,19 @@ object KtorClientFactory {
     /** OIDC sign-in: `auth/openid/{provider}/callback`. */
     private const val OPENID_ENDPOINT = "auth/openid"
     private const val TOKEN_REFRESH_ENDPOINT = "user/token/refresh"
+
+    /**
+     * The collaboration endpoints (cross-app semantics 9): comments, assignees, the read mark,
+     * following, project members and shares, and finding a person. An API token can lack the
+     * permission for them while the session still works ([ApiTokenPermission]).
+     */
+    private val COLLABORATION_ENDPOINTS = listOf(
+        Regex("""tasks/\d+/(comments|assignees)(/\d+)?"""),
+        Regex("""tasks/\d+/read"""),
+        Regex("""subscriptions/task/\d+"""),
+        Regex("""projects/\d+/(users|teams)(/[^/]+)?"""),
+        Regex("""users"""),
+    )
 
     /**
      * [encodedPath] relative to the API root, without slashes at either end. [apiBasePath] is the
@@ -52,6 +69,34 @@ object KtorClientFactory {
     internal fun isTokenRefreshPath(encodedPath: String, apiBasePath: String): Boolean =
         endpointOf(encodedPath, apiBasePath) == TOKEN_REFRESH_ENDPOINT
 
+    /** True for the collaboration endpoints, by whole endpoint (`user`, the signed-in user, is not one). */
+    internal fun isCollaborationPath(encodedPath: String, apiBasePath: String): Boolean {
+        val endpoint = endpointOf(encodedPath, apiBasePath)
+        return COLLABORATION_ENDPOINTS.any { it.matches(endpoint) }
+    }
+
+    /**
+     * The status the project list (one project) answers [token] with, or null when no answer
+     * came. Sent past this client's own 401 handling, so it never refreshes or ends the session.
+     */
+    private suspend fun Sender.projectListStatus(refused: HttpRequestBuilder, token: String, apiBasePath: String): Int? = try {
+        val check = HttpRequestBuilder().apply {
+            method = HttpMethod.Get
+            url.takeFrom(refused.url)
+            url.encodedPath = apiBasePath.trimEnd('/') + "/projects"
+            url.parameters.clear()
+            url.parameters.append("per_page", "1")
+            url.parameters.append("page", "1")
+            url.fragment = ""
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+        execute(check).response.status.value
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
     private fun apiBasePathOf(baseUrlHolder: BaseUrlHolder): String {
         val fullBaseUrl = baseUrlHolder.getFullBaseUrl()
         return if (fullBaseUrl.isEmpty()) "" else Url(fullBaseUrl).encodedPath
@@ -64,7 +109,8 @@ object KtorClientFactory {
         authManager: AuthManager,
         // Request logging puts every URL (server host, search terms, filters) into logcat, so it
         // is opt-in and only the debug build turns it on (see KoinModules).
-        enableLogging: Boolean = false
+        enableLogging: Boolean = false,
+        tokenCheck: ApiTokenCheck = ApiTokenCheck(),
     ): HttpClient {
         val client = HttpClient(engine) {
             install(ContentNegotiation) {
@@ -128,9 +174,23 @@ object KtorClientFactory {
             if (response.response.status == HttpStatusCode.Unauthorized &&
                 !isTokenRefreshPath(path, apiBasePathOf(baseUrlHolder))
             ) {
+                val failedToken = request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
+                // An API token without the permission for a collaboration request is answered 401
+                // like an ended session. When the same token still reads the project list, only
+                // this request was refused: the session stays, and the call is marked so that
+                // VikunjaApiService says what the token lacks (cross-app semantics 9.7). Asked
+                // here, outside the refresh lock.
+                if (failedToken != null &&
+                    isCollaborationPath(path, apiBasePathOf(baseUrlHolder)) &&
+                    authManager.isApiToken(failedToken) &&
+                    tokenCheck.readsProjects(failedToken) { projectListStatus(request, failedToken, apiBasePathOf(baseUrlHolder)) }
+                ) {
+                    response.attributes.put(ApiTokenPermission.Refused, Unit)
+                    return@intercept response
+                }
+
                 val refreshedRequest = authManager.withRefreshLock {
                     val currentToken = authManager.getBestTokenSync()
-                    val failedToken = request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")
 
                     if (currentToken != null && currentToken != failedToken) {
                         request.headers[HttpHeaders.Authorization] = "Bearer $currentToken"

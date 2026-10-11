@@ -23,6 +23,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLPathPart
+import com.rendyhd.vicu.data.remote.ApiTokenPermission
 import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.contentDispositionFileParameter
 import io.ktor.utils.io.ByteReadChannel
@@ -478,12 +479,19 @@ class VikunjaApiService(
         return json.decodeFromString(TaskSubscriptionReadDto.serializer(), response.bodyAsText()).subscription != null
     }
 
-    /** Follow or stop following a task; following twice (412, code 12002) counts as done. */
+    /**
+     * Follow or stop following a task; following twice (412, code 12002) counts as done. No API
+     * token may follow a task (cross-app semantics 9.7), and the refusal says so.
+     */
     suspend fun setSubscribed(taskId: Long, subscribed: Boolean) {
         val response = if (subscribed) client.post("subscriptions/task/$taskId") else client.delete("subscriptions/task/$taskId")
         if (response.status.value !in 200..299) {
             val error = response.toApiException()
-            if (!(subscribed && error.problem?.code == ERROR_ALREADY_SUBSCRIBED)) throw error
+            if (subscribed && error.problem?.code == ERROR_ALREADY_SUBSCRIBED) return
+            if (error.tokenPermission) {
+                throw VikunjaApiException(error.httpStatus, error.problem, tokenPermission = true, message = ApiTokenPermission.TOKEN_CANNOT_FOLLOW)
+            }
+            throw error
         } else {
             response.bodyAsText()
         }
@@ -556,6 +564,16 @@ class VikunjaApiService(
         val problem = runCatching {
             json.decodeFromString<VikunjaProblemDto>(raw)
         }.getOrNull()
+        // A 401 that refused only this request: the API token lacks its permission, the session
+        // works (KtorClientFactory, cross-app semantics 9.7).
+        if (call.attributes.contains(ApiTokenPermission.Refused)) {
+            return VikunjaApiException(
+                HttpStatusCode.Forbidden.value,
+                problem,
+                tokenPermission = true,
+                message = ApiTokenPermission.TOKEN_LACKS_PERMISSION,
+            )
+        }
         return VikunjaApiException(status.value, problem)
     }
 

@@ -86,7 +86,8 @@ await step('comments-from-row', async () => {
   const nodes = d.dump()
   check(nodes.some((n) => n.text === 'Comments'), 'the count opens the Comments screen')
   check(nodes.some((n) => /^Visible to you/.test(n.text ?? '')), 'the thread starts with "Visible to you ..."')
-  check(nodes.some((n) => n['content-desc'] === 'Notify me about new comments' || n['content-desc'] === 'Notifications on for this task'), 'the bell is named')
+  // The harness signs in with an API token, and Vikunja does not let tokens follow tasks (cross-app semantics 9.7).
+  check(!nodes.some((n) => n['content-desc'] === 'Notify me about new comments' || n['content-desc'] === 'Notifications on for this task'), 'no Notify me with an API token')
   check(nodes.some((n) => n.text === 'Comment. Type @ to mention'), 'the composer shows its placeholder')
 })
 

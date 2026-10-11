@@ -244,6 +244,12 @@ class AuthManager(
 
     fun getBestTokenSync(): String? = cachedToken
 
+    /**
+     * Whether [token] is the stored API token: the user's own, or the backup token a password or
+     * SSO session falls back to. Such a token can lack permissions a session has (cross-app semantics 9.7).
+     */
+    suspend fun isApiToken(token: String): Boolean = token == tokenStorage.getApiToken()
+
     suspend fun getBestToken(): String? {
         val jwt = tokenStorage.getJwt()
         val jwtExpiry = tokenStorage.getJwtExpiry()
