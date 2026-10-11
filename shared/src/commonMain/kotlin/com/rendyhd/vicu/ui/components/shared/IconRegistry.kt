@@ -53,6 +53,14 @@ object IconRegistry {
 
     private val ICON_MAP: Map<String, ImageVector> = PRESET_ICONS.associate { it.key to it.icon }
 
+    /** The smart list a slot type shows, or null for a project or custom list slot. */
+    fun smartListIdentity(type: BottomBarSlotType): SmartListIdentity? = when (type) {
+        BottomBarSlotType.TODAY -> SmartListIdentity.TODAY
+        BottomBarSlotType.UPCOMING -> SmartListIdentity.UPCOMING
+        BottomBarSlotType.ANYTIME -> SmartListIdentity.ANYTIME
+        BottomBarSlotType.PROJECT, BottomBarSlotType.CUSTOM_LIST -> null
+    }
+
     private val SMART_LIST_ICONS: Map<BottomBarSlotType, ImageVector> = mapOf(
         BottomBarSlotType.TODAY to SmartListIdentity.TODAY.icon,
         BottomBarSlotType.UPCOMING to SmartListIdentity.UPCOMING.icon,

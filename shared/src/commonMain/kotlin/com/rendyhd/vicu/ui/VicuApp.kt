@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalAccessibilityManager
@@ -116,6 +117,7 @@ import com.rendyhd.vicu.util.AppMessages
 import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.DateDisplayFormat
 import com.rendyhd.vicu.util.DayClock
+import com.rendyhd.vicu.util.parseHexColor
 import com.rendyhd.vicu.util.postIfRefused
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -131,8 +133,10 @@ internal data class BottomNavItem(
     val route: Any,
     val routeName: String,
     val isParameterized: Boolean = false,
-    /** Set for a smart list: its icon is drawn in the identity colour. */
+    /** Set for a smart list while smart list colours are on: its icon is drawn in the identity colour. */
     val identity: SmartListIdentity? = null,
+    /** The colour the user gave a project or custom list slot; null draws the icon in the bar's content colour. */
+    val color: Color? = null,
 )
 
 /** Carries the task editor's unsaved draft through process death (see [TaskDetailViewModel.currentDraftJson]). */
@@ -142,29 +146,34 @@ private class TaskDetailDraftHolder(val restored: String?)
  * The bottom bar: the Inbox first, always, then the slots the user chose. A slot for something
  * that is gone (a deleted project or list) is left out, and so is a project slot for the Inbox
  * ([inboxProjectId]): the bar already starts with it.
+ *
+ * The smart lists wear their identity colours unless [smartListColors] is off; a project or
+ * custom list slot wears the colour chosen for it, if any.
  */
 internal fun resolveBottomBarItems(
     slots: List<BottomBarSlot>,
     allProjects: List<Project>,
     customLists: List<CustomList>,
     inboxProjectId: Long,
+    smartListColors: Boolean = true,
 ): List<BottomNavItem> {
+    fun identity(of: SmartListIdentity) = of.takeIf { smartListColors }
     val items = mutableListOf(
-        BottomNavItem("Inbox", SmartListIdentity.INBOX.icon, InboxRoute, "InboxRoute", identity = SmartListIdentity.INBOX),
+        BottomNavItem("Inbox", SmartListIdentity.INBOX.icon, InboxRoute, "InboxRoute", identity = identity(SmartListIdentity.INBOX)),
     )
     for (slot in slots) {
         val item = when (slot.type) {
             BottomBarSlotType.TODAY -> BottomNavItem(
                 "Today", IconRegistry.resolveIcon(slot), TodayRoute, "TodayRoute",
-                identity = SmartListIdentity.TODAY,
+                identity = identity(SmartListIdentity.TODAY),
             )
             BottomBarSlotType.UPCOMING -> BottomNavItem(
                 "Upcoming", IconRegistry.resolveIcon(slot), UpcomingRoute, "UpcomingRoute",
-                identity = SmartListIdentity.UPCOMING,
+                identity = identity(SmartListIdentity.UPCOMING),
             )
             BottomBarSlotType.ANYTIME -> BottomNavItem(
                 "Anytime", IconRegistry.resolveIcon(slot), AnytimeRoute, "AnytimeRoute",
-                identity = SmartListIdentity.ANYTIME,
+                identity = identity(SmartListIdentity.ANYTIME),
             )
             BottomBarSlotType.PROJECT -> {
                 val projectId = slot.referenceId.toLongOrNull() ?: continue
@@ -174,6 +183,7 @@ internal fun resolveBottomBarItems(
                     project.title, IconRegistry.resolveIcon(slot),
                     ProjectRoute(projectId), "ProjectRoute/$projectId",
                     isParameterized = true,
+                    color = parseHexColor(slot.colorHex),
                 )
             }
             BottomBarSlotType.CUSTOM_LIST -> {
@@ -182,6 +192,7 @@ internal fun resolveBottomBarItems(
                     list.name, IconRegistry.resolveIcon(slot),
                     CustomListRoute(slot.referenceId), "CustomListRoute/${slot.referenceId}",
                     isParameterized = true,
+                    color = parseHexColor(slot.colorHex),
                 )
             }
         }
@@ -490,6 +501,7 @@ fun VicuApp(
     // Build dynamic bottom bar items from config
     val bottomNavItems = remember(
         drawerUiState.bottomBarSlots,
+        drawerUiState.bottomBarSmartListColors,
         drawerUiState.allProjects,
         drawerUiState.customLists,
         drawerUiState.inboxProjectId,
@@ -499,6 +511,7 @@ fun VicuApp(
             drawerUiState.allProjects,
             drawerUiState.customLists,
             drawerUiState.inboxProjectId,
+            smartListColors = drawerUiState.bottomBarSmartListColors,
         )
     }
 
@@ -563,8 +576,10 @@ fun VicuApp(
                                         item.icon,
                                         contentDescription = null,
                                         modifier = Modifier.scale(scale),
-                                        // A smart list's icon is drawn in its identity colour (design-system-v1, section 8).
+                                        // A smart list's icon is drawn in its identity colour (design-system-v1,
+                                        // section 8), a project or list slot in the colour chosen for it.
                                         tint = item.identity?.color(LocalVicuColors.current.identity)
+                                            ?: item.color
                                             ?: LocalContentColor.current,
                                     )
                                 },

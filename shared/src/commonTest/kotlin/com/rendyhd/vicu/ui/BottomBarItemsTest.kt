@@ -5,8 +5,11 @@ import com.rendyhd.vicu.domain.model.BottomBarSlotType
 import com.rendyhd.vicu.domain.model.CustomList
 import com.rendyhd.vicu.domain.model.CustomListFilter
 import com.rendyhd.vicu.domain.model.Project
+import com.rendyhd.vicu.ui.components.shared.SmartListIdentity
+import com.rendyhd.vicu.util.parseHexColor
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /** The bottom bar: the Inbox, then the slots the user chose (UI-28). */
 class BottomBarItemsTest {
@@ -15,8 +18,8 @@ class BottomBarItemsTest {
     private val work = Project(id = 7, title = "Work")
     private val list = CustomList(id = "l1", name = "Focus", filter = CustomListFilter())
 
-    private fun items(slots: List<BottomBarSlot>) =
-        resolveBottomBarItems(slots, listOf(inbox, work), listOf(list), inboxProjectId = 5)
+    private fun items(slots: List<BottomBarSlot>, smartListColors: Boolean = true) =
+        resolveBottomBarItems(slots, listOf(inbox, work), listOf(list), inboxProjectId = 5, smartListColors = smartListColors)
 
     private fun names(slots: List<BottomBarSlot>) = items(slots).map { it.routeName }
 
@@ -66,5 +69,46 @@ class BottomBarItemsTest {
     @Test
     fun `a project slot for the inbox does not add the inbox twice`() {
         assertEquals(listOf("InboxRoute"), names(listOf(BottomBarSlot(BottomBarSlotType.PROJECT, "5"))))
+    }
+
+    @Test
+    fun `the smart lists wear their identity colours`() {
+        assertEquals(
+            listOf(SmartListIdentity.INBOX, SmartListIdentity.TODAY, SmartListIdentity.UPCOMING, SmartListIdentity.ANYTIME),
+            items(BottomBarSlot.DEFAULT_SLOTS).map { it.identity },
+        )
+    }
+
+    @Test
+    fun `with smart list colours off no icon is coloured, the inbox included`() {
+        val result = items(BottomBarSlot.DEFAULT_SLOTS, smartListColors = false)
+
+        assertEquals(4, result.size)
+        result.forEach {
+            assertNull(it.identity, it.routeName)
+            assertNull(it.color, it.routeName)
+        }
+    }
+
+    @Test
+    fun `a project or list slot wears the colour chosen for it, whatever the smart list setting`() {
+        val slots = listOf(
+            BottomBarSlot(BottomBarSlotType.PROJECT, "7", colorHex = "#4186e0"),
+            BottomBarSlot(BottomBarSlotType.CUSTOM_LIST, "l1", colorHex = "#e8384f"),
+        )
+        for (smartListColors in listOf(true, false)) {
+            val result = items(slots, smartListColors).drop(1)
+            assertEquals(listOf(parseHexColor("#4186e0"), parseHexColor("#e8384f")), result.map { it.color })
+            result.forEach { assertNull(it.identity) }
+        }
+    }
+
+    @Test
+    fun `a project or list slot without a colour has none`() {
+        val result = items(
+            listOf(BottomBarSlot(BottomBarSlotType.PROJECT, "7"), BottomBarSlot(BottomBarSlotType.CUSTOM_LIST, "l1")),
+        ).drop(1)
+
+        result.forEach { assertNull(it.color, it.routeName) }
     }
 }
