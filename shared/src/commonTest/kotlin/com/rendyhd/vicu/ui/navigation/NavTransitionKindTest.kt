@@ -6,17 +6,17 @@ import org.junit.Test
 class NavTransitionKindTest {
 
     @Test
-    fun `peer screens fade through`() {
+    fun `peer screens cross-fade`() {
         assertEquals(
-            NavTransitionKind.FadeThrough,
+            NavTransitionKind.CrossFade,
             navTransitionKind(TransitionScreen.Other, TransitionScreen.Other),
         )
         assertEquals(
-            NavTransitionKind.FadeThrough,
+            NavTransitionKind.CrossFade,
             navTransitionKind(TransitionScreen.Other, TransitionScreen.Project),
         )
         assertEquals(
-            NavTransitionKind.FadeThrough,
+            NavTransitionKind.CrossFade,
             navTransitionKind(TransitionScreen.Project, TransitionScreen.Other),
         )
     }
@@ -25,7 +25,15 @@ class NavTransitionKindTest {
     fun `a project inside a project is an axis move both ways`() {
         assertEquals(
             NavTransitionKind.SharedAxisX,
-            navTransitionKind(TransitionScreen.Project, TransitionScreen.Project),
+            navTransitionKind(TransitionScreen.Project, TransitionScreen.Project, pushed = true),
+        )
+    }
+
+    @Test
+    fun `a project chosen in the bottom bar or the drawer over another project is a peer`() {
+        assertEquals(
+            NavTransitionKind.CrossFade,
+            navTransitionKind(TransitionScreen.Project, TransitionScreen.Project, pushed = false),
         )
     }
 
@@ -38,6 +46,10 @@ class NavTransitionKindTest {
         assertEquals(
             NavTransitionKind.SharedAxisX,
             navTransitionKind(TransitionScreen.Search, TransitionScreen.Project),
+        )
+        assertEquals(
+            NavTransitionKind.SharedAxisX,
+            navTransitionKind(TransitionScreen.Project, TransitionScreen.Search, pushed = false),
         )
     }
 

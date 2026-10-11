@@ -43,7 +43,9 @@ fun AppNavHost(
     val notificationPermission: NotificationPermissionCoordinator = koinInject()
     val axisPx = with(LocalDensity.current) { SHARED_AXIS_DP.dp.roundToPx() }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val transitions = remember(axisPx, rtl) { NavTransitions(axisPx, rtl) }
+    val transitions = remember(axisPx, rtl, navController) {
+        NavTransitions(axisPx, rtl) { entry -> navController.currentBackStack.value.any { it.id == entry.id } }
+    }
     NavHost(
         navController = navController,
         startDestination = startDestination,
