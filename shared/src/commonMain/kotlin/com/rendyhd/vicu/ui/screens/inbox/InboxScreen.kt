@@ -36,7 +36,7 @@ import com.rendyhd.vicu.ui.components.selection.SelectionTopBar
 import com.rendyhd.vicu.ui.components.selection.SelectionViewModel
 import com.rendyhd.vicu.ui.components.shared.EmptyState
 import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
-import com.rendyhd.vicu.ui.components.shared.VicuFab
+import com.rendyhd.vicu.ui.components.shared.ScreenFab
 import com.rendyhd.vicu.ui.components.shared.VicuTopAppBar
 import com.rendyhd.vicu.ui.components.shared.rememberVicuTopBarScroll
 import com.rendyhd.vicu.ui.components.task.ReorderableTaskRow
@@ -108,7 +108,7 @@ fun InboxScreen(
             // Only a standing notice (no usable Inbox) hides it; a failed refresh or completion
             // is a passing message and the user can still add a task.
             if (!selectionActive && state.notice == null) {
-                VicuFab(onClick = { onShowTaskEntry(state.inboxProjectId, null) }, expanded = !listState.canScrollBackward)
+                ScreenFab(onClick = { onShowTaskEntry(state.inboxProjectId, null) }, expanded = !listState.canScrollBackward)
             }
         },
         floatingActionButtonPosition = if (LocalFabAlignStart.current) FabPosition.Start else FabPosition.End,

@@ -5,9 +5,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
@@ -66,7 +70,10 @@ import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.permission.NotificationPermissionCoordinator
 import com.rendyhd.vicu.ui.components.picker.WhenSheet
 import com.rendyhd.vicu.ui.components.settings.NotificationPermissionSheet
+import com.rendyhd.vicu.ui.components.shared.AppFab
+import com.rendyhd.vicu.ui.components.shared.AppFabHost
 import com.rendyhd.vicu.ui.components.shared.CustomListDialog
+import com.rendyhd.vicu.ui.components.shared.LocalAppFabHost
 import com.rendyhd.vicu.ui.components.shared.ProjectEditDialog
 import com.rendyhd.vicu.ui.components.shared.IconRegistry
 import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
@@ -484,6 +491,8 @@ fun VicuApp(
     val drawerUiState by drawerViewModel.uiState.collectAsStateWithLifecycle()
     val projectProgress by drawerViewModel.projectProgress.collectAsStateWithLifecycle()
     val fabAlignStart by drawerViewModel.fabAlignStart.collectAsStateWithLifecycle()
+    // The screens' + buttons, drawn as one by AppFab.
+    val fabHost = remember { AppFabHost() }
     val subtaskDisplayMode by drawerViewModel.subtaskDisplayMode.collectAsStateWithLifecycle()
 
     // What every surface of the app is composed under, the sheets and dialogs as much as the
@@ -618,20 +627,32 @@ fun VicuApp(
                         onDiscard = syncStateViewModel::discardFailed,
                     )
                 }
-                val navHostModifier = Modifier.weight(1f)
-                CompositionLocalProvider(*appLocals) {
-                    AppNavHost(
-                        navController = navController,
-                        startDestination = startDestination,
-                        onOpenDrawer = { scope.launch { drawerState.open() } },
-                        onNavigateToSearch = {
-                            navController.navigate(SearchRoute) {
-                                launchSingleTop = true
-                            }
-                        },
-                        onTaskClick = onTaskClick,
-                        onShowTaskEntry = onShowTaskEntry,
-                        modifier = navHostModifier,
+                Box(modifier = Modifier.weight(1f)) {
+                    CompositionLocalProvider(*appLocals, LocalAppFabHost provides fabHost) {
+                        AppNavHost(
+                            navController = navController,
+                            startDestination = startDestination,
+                            onOpenDrawer = { scope.launch { drawerState.open() } },
+                            onNavigateToSearch = {
+                                navController.navigate(SearchRoute) {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onTaskClick = onTaskClick,
+                            onShowTaskEntry = onShowTaskEntry,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    // The + button of the screen on top, over the screens rather than in them, so a
+                    // change of screen does not fade it. Placed where the screens' Scaffolds put it:
+                    // 16 dp from the corner, above the system bar inset they leave free.
+                    AppFab(
+                        host = fabHost,
+                        screen = navBackStackEntry?.id,
+                        modifier = Modifier
+                            .align(if (fabAlignStart) Alignment.BottomStart else Alignment.BottomEnd)
+                            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
+                            .padding(16.dp),
                     )
                 }
             }

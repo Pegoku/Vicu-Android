@@ -21,7 +21,8 @@ internal enum class TransitionScreen { Project, Search, Other }
 internal enum class NavTransitionKind {
     /**
      * Peers: the screen on top fades (210 ms) while the one under it stays as it is, so what both
-     * screens share (the top bar, the + button) stays on screen instead of blinking.
+     * screens share (the top bar) stays on screen instead of blinking. The + button is not in the
+     * screens at all (AppFab).
      */
     CrossFade,
 
@@ -61,7 +62,7 @@ internal const val SHARED_AXIS_DP = 30
  * back to under it, which is what the cross-fade relies on: forward, the new screen fades in over
  * the old one, which is held as it is until it is covered; back, the old screen fades out over the
  * one below, which is there from the start. A fade-through (old out, then new in) blinked: for a
- * moment neither screen was there, and the + button and the top bar went with them.
+ * moment neither screen was there, and the top bar went with them.
  *
  * History: commit 0c762fe turned all four off because the Navigation default is a 700 ms
  * cross-fade, too slow for lists the user flips between every few seconds. What is used now is
