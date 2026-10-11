@@ -271,7 +271,7 @@ class FakePendingActionDao : PendingActionDao {
     override suspend fun countWaitingForTask(taskId: Long, labelPayloadPattern: String): Int = lock.withLock {
         rows.values.count {
             it.status in setOf("pending", "processing") && (
-                (it.entityType == "task" && it.entityId == taskId) ||
+                (it.entityType in setOf("task", "assignee", "comment") && it.entityId == taskId) ||
                     (it.entityType == "label" && it.actionType in setOf("add_label", "remove_label") &&
                         sqlLike(labelPayloadPattern, it.payload))
                 )
@@ -340,7 +340,7 @@ class FakePendingActionDao : PendingActionDao {
 
     override suspend fun getTaskIdsWithPendingActions(): List<Long> = lock.withLock {
         rows.values
-            .filter { it.entityType in setOf("task", "routine") && it.status in setOf("pending", "failed", "processing") }
+            .filter { it.entityType in setOf("task", "routine", "assignee") && it.status in setOf("pending", "failed", "processing") }
             .map { it.entityId }
     }
 
@@ -370,6 +370,18 @@ class FakePendingActionDao : PendingActionDao {
                 it.entityType == entityType && it.entityId == entityId &&
                     it.status in setOf("pending", "failed", "processing")
             }
+        }
+
+    override suspend fun updatePayload(id: Long, payload: String) {
+        lock.withLock { rows[id]?.let { rows[id] = it.copy(payload = payload) } }
+        version.value++
+    }
+
+    override suspend fun getActiveForTask(entityType: String, taskId: Long): List<PendingActionEntity> =
+        lock.withLock {
+            rows.values
+                .filter { it.entityType == entityType && it.entityId == taskId && it.status in setOf("pending", "failed", "processing") }
+                .sortedWith(compareBy({ it.createdAt }, { it.id }))
         }
 }
 

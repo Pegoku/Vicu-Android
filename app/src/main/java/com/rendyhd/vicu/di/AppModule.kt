@@ -67,6 +67,8 @@ import com.rendyhd.vicu.ui.screens.taskdetail.TaskDetailViewModel
 import com.rendyhd.vicu.ui.screens.taskentry.TaskEntryViewModel
 import com.rendyhd.vicu.ui.screens.today.TodayViewModel
 import com.rendyhd.vicu.ui.screens.upcoming.UpcomingViewModel
+import com.rendyhd.vicu.ui.components.collab.CollabViewModel
+import com.rendyhd.vicu.ui.screens.comments.TaskCommentsViewModel
 
 val appModule = module {
     single { PlatformContext(androidContext()) }
@@ -165,6 +167,8 @@ val viewModelModule = module {
     viewModelOf(::TaskEntryViewModel)
     viewModelOf(::TodayViewModel)
     viewModelOf(::UpcomingViewModel)
+    viewModelOf(::CollabViewModel)
+    viewModelOf(::TaskCommentsViewModel)
 }
 
 val workerModule = module {

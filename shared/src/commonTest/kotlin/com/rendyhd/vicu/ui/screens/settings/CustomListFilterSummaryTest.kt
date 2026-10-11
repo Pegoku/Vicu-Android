@@ -53,4 +53,16 @@ class CustomListFilterSummaryTest {
         )
         assertEquals("this week · excl. overdue · 2 project(s) · 1 label(s) · incl. done", summary(filter))
     }
+
+    @Test
+    fun `the summary names the collaboration and activity conditions`() {
+        val list = CustomList(
+            id = "a",
+            name = "A",
+            filter = CustomListFilter(assigned = "me", comments = "unread", sharedOnly = true, changedWithinDays = 7),
+        )
+        assertEquals("assigned to me · unread comments · shared only · changed in 7 days", buildFilterSummary(list))
+        assertEquals("changed today", buildFilterSummary(list.copy(filter = CustomListFilter(changedWithinDays = 1))))
+        assertEquals("", buildFilterSummary(list.copy(filter = CustomListFilter(assigned = "team", changedWithinDays = 0))))
+    }
 }

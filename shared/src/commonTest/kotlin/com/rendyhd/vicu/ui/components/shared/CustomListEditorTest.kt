@@ -78,4 +78,19 @@ class CustomListEditorTest {
             assertFalse(CustomListFilterBuilder.windowHonorsIncludeOverdue(window), window)
         }
     }
+
+    @Test
+    fun `the changed choices keep a value from another device selectable`() {
+        assertEquals(listOf("0", "1", "3", "7", "30"), changedOptions(null).map { it.first })
+        assertEquals(changedOptions(null), changedOptions(7))
+        assertEquals("14" to "In the last 14 days", changedOptions(14).last())
+    }
+
+    @Test
+    fun `assigned and comments offer every value the evaluator knows and keep a newer one`() {
+        assertEquals(listOf("") + CustomListFilter.ASSIGNED_VALUES, ASSIGNED_OPTIONS.map { it.first })
+        assertEquals(listOf("") + CustomListFilter.COMMENTS_VALUES, COMMENTS_OPTIONS.map { it.first })
+        assertEquals(ASSIGNED_OPTIONS, withKeptValue(ASSIGNED_OPTIONS, "me"))
+        assertEquals("team" to "Set by a newer version", withKeptValue(ASSIGNED_OPTIONS, "team").last())
+    }
 }

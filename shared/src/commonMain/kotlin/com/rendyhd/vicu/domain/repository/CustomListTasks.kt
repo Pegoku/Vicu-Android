@@ -2,6 +2,7 @@ package com.rendyhd.vicu.domain.repository
 
 import com.rendyhd.vicu.domain.model.CustomListFilter
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.util.CustomListContext
 import com.rendyhd.vicu.util.CustomListFilterBuilder
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -27,5 +28,6 @@ suspend fun TaskRepository.customListTasks(
     today: LocalDate,
     zone: TimeZone,
     activeProjectIds: Set<Long>,
+    context: CustomListContext = CustomListContext.NONE,
 ): List<Task> =
-    CustomListFilterBuilder.visibleTasks(customListSource(filter).first(), filter, today, zone, activeProjectIds)
+    CustomListFilterBuilder.visibleTasks(customListSource(filter).first(), filter, today, zone, activeProjectIds, context)

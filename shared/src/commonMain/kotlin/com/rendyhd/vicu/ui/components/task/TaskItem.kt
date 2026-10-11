@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -76,6 +77,11 @@ import com.rendyhd.vicu.ui.theme.LocalVicuColors
 import com.rendyhd.vicu.ui.theme.VicuMotion
 import com.rendyhd.vicu.ui.theme.VicuChipShape
 import com.rendyhd.vicu.ui.components.section.ProjectMeta
+import com.rendyhd.vicu.ui.components.collab.AvatarStack
+import com.rendyhd.vicu.ui.components.collab.LocalCollab
+import com.rendyhd.vicu.ui.components.collab.RowCommentCount
+import com.rendyhd.vicu.domain.model.toCollabUser
+import com.rendyhd.vicu.util.Collaboration
 import com.rendyhd.vicu.util.DateContext
 import com.rendyhd.vicu.util.DateDisplay
 import com.rendyhd.vicu.util.DateUtils
@@ -198,13 +204,20 @@ fun TaskItem(
             val metaLabels = rowLabels(task.labels, view)
             val parentTitle = task.relatedTasks[RelationKind.PARENTTASK].orEmpty().firstOrNull()?.title
             val isRepeating = isRecurring(task.repeatAfter, task.repeatMode)
+            // Collaboration signals, only on tasks of shared projects (cross-app semantics 9).
+            val collab = LocalCollab.current
+            val signal = collab.signal(task)
+            val commentCount = signal?.commentCount ?: 0
+            val assignees = collab.assignees(task)
+            val rowSurface = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
             val hasMeta = metaProject != null || metaLabels.isNotEmpty() || parentTitle != null ||
-                subtaskCount > 0 || hasNotes || isRepeating || task.attachments.isNotEmpty()
+                subtaskCount > 0 || hasNotes || isRepeating || task.attachments.isNotEmpty() || commentCount > 0
             // Line 1 is the title, level with the checkbox; line 2 is the meta line, when there is one.
-            // The checklist is the row's expand control when subtasks expand inline: its 48 dp target
-            // takes the place of the bottom padding.
+            // The checklist is the row's expand control when subtasks expand inline, and the comment
+            // count opens the comments: their 48 dp targets take the place of the bottom padding.
             val expandable = subtaskCount > 0 && displayMode == SubtaskDisplayMode.EXPANDABLE
-            Column(modifier = Modifier.weight(1f).padding(top = 12.dp, bottom = if (expandable) 0.dp else 12.dp)) {
+            val metaTarget = expandable || (commentCount > 0 && !selectionActive)
+            Column(modifier = Modifier.weight(1f).padding(top = 12.dp, bottom = if (metaTarget) 0.dp else 12.dp)) {
                 Text(
                     text = task.title,
                     style = MaterialTheme.typography.bodyLarge,
@@ -326,16 +339,45 @@ fun TaskItem(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
+                        if (commentCount > 0) {
+                            if (selectionActive) {
+                                // While selecting, a tap selects the row: the count is only shown.
+                                Text(
+                                    text = Collaboration.commentCountLabel(commentCount, signal?.isUnread == true),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            } else {
+                                RowCommentCount(
+                                    count = commentCount,
+                                    unread = signal?.isUnread == true,
+                                    onOpen = { collab.openComments(task.id) },
+                                    ringColor = rowSurface,
+                                )
+                            }
+                        }
                     }
                 }
             }
-            // The trailing cluster, level with the title: the due phrase, the reminder bell, the
-            // priority mark last.
+            // The trailing cluster, level with the title: the assignees, the due phrase, the reminder
+            // bell, the priority mark last.
             Row(
                 modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                if (assignees.isNotEmpty()) {
+                    val assignedLabel = remember(assignees, collab.state.me) {
+                        Collaboration.assignedLabel(assignees.map { it.toCollabUser() }, collab.state.me)
+                    }
+                    AvatarStack(
+                        people = assignees,
+                        size = 20.dp,
+                        ringColor = rowSurface,
+                        modifier = Modifier.clearAndSetSemantics { contentDescription = assignedLabel },
+                    )
+                }
                 TaskLinkIcons(description = task.description)
                 if (!DateUtils.isNullDate(task.dueDate) && task.dueDate.isNotBlank()) {
                     TaskDueBadge(dueDate = task.dueDate, context = view.dateContext)

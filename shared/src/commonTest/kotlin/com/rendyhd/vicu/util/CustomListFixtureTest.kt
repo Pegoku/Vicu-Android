@@ -3,6 +3,8 @@ package com.rendyhd.vicu.util
 import com.rendyhd.vicu.domain.model.CustomListWire
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.model.TaskSignal
+import com.rendyhd.vicu.domain.model.User
 import com.rendyhd.vicu.domain.model.toDomain
 import com.rendyhd.vicu.domain.model.toWire
 import com.rendyhd.vicu.util.CrossAppFixture.date
@@ -122,6 +124,83 @@ class CustomListFixtureTest {
             val roundTripped = original.toWire().toDomain()
 
             val shown = CustomListFilterBuilder.applyClientSideFilters(all, roundTripped.filter, date(vector.today), zone)
+            assertEquals(vector.expect, shown.map { it.id }, vector.name)
+        }
+    }
+
+    // --- customListActivity (section 3.3) -----------------------------------------------------
+
+    private val activity get() = fixture.customListActivity
+
+    /** The activity tasks as the app holds them, with their signals beside them. */
+    private fun activityTasks(zone: TimeZone): List<Task> = activity.tasks.map {
+        Task(
+            id = it.id,
+            title = "Task ${it.id}",
+            done = it.done,
+            projectId = it.projectId,
+            dueDate = it.due?.let { due -> local(due, zone).toString() } ?: Constants.NULL_DATE_STRING,
+            updated = local(it.updated, zone).toString(),
+            assignees = it.assignees.map { id -> User(id = id, username = "user$id", name = "") },
+        )
+    }
+
+    private fun contextOf(vector: CrossAppFixture.ActivityVector) = CustomListContext(
+        me = if (vector.signedOut) null else activity.me,
+        sharedProjectIds = activity.shared.toSet(),
+        signals = activity.tasks.associate { it.id to TaskSignal(it.commentCount, it.unread) },
+    )
+
+    private fun filterOf(vector: CrossAppFixture.ActivityVector) =
+        CustomListWire(id = "vector", name = vector.name, filter = vector.filter).toDomain().filter
+
+    @Test
+    fun `the fixture has the activity vectors`() {
+        assertTrue(activity.vectors.size >= 20, "found ${activity.vectors.size} vectors")
+    }
+
+    @Test
+    fun `every customListActivity vector in every zone at every time of day`() {
+        val scope = CoroutineScope(Job())
+        for (zone in zones) {
+            val all = activityTasks(zone)
+            for (vector in activity.vectors) for (clock in clocks) {
+                val now = local("${vector.today}T$clock", zone)
+                val day = DayClock(scope, FixedTimeSource(now, zone), ticking = false).day.value
+                val filter = filterOf(vector)
+                val context = contextOf(vector)
+
+                val shown = CustomListFilterBuilder.applyClientSideFilters(all, filter, day.date, day.zone, context)
+                assertEquals(vector.expect, shown.map { it.id }, "${vector.name} at $clock in $zone")
+
+                val serverFilter = CustomListFilterBuilder.buildFilterString(filter, day.date, day.zone)
+                for (task in shown) {
+                    assertTrue(
+                        ServerFilterEval.matches(serverFilter, ServerFilterEval.Row(task.done, task.projectId, task.dueDate, task.updated)),
+                        "task ${task.id} of ${vector.name} at $clock in $zone is dropped by: $serverFilter",
+                    )
+                }
+                // Without the client-only conditions the "changed" clause is exact.
+                if (!filter.hasCollaborationCondition && filter.projectIds.isEmpty() && filter.dueDateFilter == "all") {
+                    val fromServer = all.filter {
+                        ServerFilterEval.matches(serverFilter, ServerFilterEval.Row(it.done, it.projectId, it.dueDate, it.updated))
+                    }
+                    assertEquals(vector.expect, fromServer.map { it.id }, "server: ${vector.name} at $clock in $zone")
+                }
+            }
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun `a list written by this app keeps the meaning of every activity vector`() {
+        val zone = zones.first()
+        val all = activityTasks(zone)
+        for (vector in activity.vectors) {
+            val roundTripped = CustomListWire(id = "v", name = "v", filter = vector.filter).toDomain().toWire().toDomain()
+            val shown = CustomListFilterBuilder.applyClientSideFilters(
+                all, roundTripped.filter, date(vector.today), zone, contextOf(vector),
+            )
             assertEquals(vector.expect, shown.map { it.id }, vector.name)
         }
     }

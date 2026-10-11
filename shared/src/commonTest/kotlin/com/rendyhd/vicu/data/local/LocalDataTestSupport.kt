@@ -37,6 +37,10 @@ class FakeLocalDataDao : LocalDataDao {
     val attachmentIds = mutableSetOf<Long>()
     val pending = mutableListOf<PendingActionEntity>()
     val routineArchive = mutableSetOf<String>()
+    val memberProjectIds = mutableSetOf<Long>()
+    val signalTaskIds = mutableSetOf<Long>()
+    /** Comment ids to (task id, pending). */
+    val comments = mutableMapOf<Long, Pair<Long, Boolean>>()
 
     private val archiveCount = MutableStateFlow(0)
 
@@ -74,6 +78,27 @@ class FakeLocalDataDao : LocalDataDao {
     override suspend fun deleteAllAttachments() {
         suspendPoint()
         attachmentIds.clear()
+    }
+
+    override suspend fun deleteAllProjectMembers() {
+        suspendPoint()
+        memberProjectIds.clear()
+    }
+
+    override suspend fun deleteAllTaskSignals() {
+        suspendPoint()
+        signalTaskIds.clear()
+    }
+
+    override suspend fun deleteCommentsWithoutQueuedActions() {
+        suspendPoint()
+        val queuedTasks = queued("comment")
+        comments.entries.removeAll { (_, value) -> !value.second || value.first !in queuedTasks }
+    }
+
+    override suspend fun deleteAllTaskComments() {
+        suspendPoint()
+        comments.clear()
     }
 
     override suspend fun deleteAllPendingActions() {

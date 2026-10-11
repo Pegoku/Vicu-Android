@@ -37,6 +37,8 @@ enum class DateContext {
     HEADER_FULL,
     LOGBOOK_GROUP,
     LOGBOOK_TIME,
+    /** The day divider of a comment thread (comment times use [LOGBOOK_TIME]). */
+    COMMENT_DAY,
 }
 
 /**
@@ -254,6 +256,12 @@ object DateDisplay {
                 else -> p.monthYear(value)
             }
             DateContext.LOGBOOK_TIME -> p.time(value, fmt.hour12)
+            // A comment a little in the future counts as today.
+            DateContext.COMMENT_DAY -> when {
+                diff >= 0 -> TODAY
+                diff == -1 -> YESTERDAY
+                else -> p.weekdayDate(value, today)
+            }
         }
     }
 

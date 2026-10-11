@@ -8,7 +8,7 @@ import kotlinx.datetime.Instant
  * accepts. The same idea as the desktop test helper (`server-filter-eval.ts`).
  *
  * Grammar: `expr := and ('||' and)*`, `and := primary ('&&' primary)*`,
- * `primary := '(' expr ')' | field op value`. Fields: `done`, `project_id`, `due_date`. Anything
+ * `primary := '(' expr ')' | field op value`. Fields: `done`, `project_id`, `due_date`, `updated`. Anything
  * else throws, so a new clause cannot slip through a test unnoticed.
  */
 object ServerFilterEval {
@@ -16,7 +16,7 @@ object ServerFilterEval {
     private val nullInstant: Instant = Instant.parse(Constants.NULL_DATE_STRING)
 
     /** The fields of a Vikunja task the filter can look at. */
-    class Row(val done: Boolean, val projectId: Long, val dueDate: String) {
+    class Row(val done: Boolean, val projectId: Long, val dueDate: String, val updated: String = "") {
         /** A due date as the server compares it: blank and the null date are the same "no date". */
         val due: Instant = if (dueDate.isBlank()) nullInstant else Instant.parse(dueDate)
     }
@@ -88,6 +88,13 @@ object ServerFilterEval {
         "due_date" -> {
             val wanted = if (value.isBlank()) nullInstant else Instant.parse(value)
             ({ row: Row -> compare(op, row.due, wanted) })
+        }
+        "updated" -> {
+            val wanted = Instant.parse(value)
+            ({ row: Row ->
+                require(row.updated.isNotBlank()) { "The filter compares updated but the task has none" }
+                compare(op, Instant.parse(row.updated), wanted)
+            })
         }
         else -> error("Unsupported filter field $field")
     }

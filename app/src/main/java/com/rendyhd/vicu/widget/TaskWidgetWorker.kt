@@ -14,8 +14,10 @@ import com.rendyhd.vicu.data.local.dao.ProjectDao
 import com.rendyhd.vicu.data.local.dao.TaskDao
 import com.rendyhd.vicu.data.local.entity.TaskEntity
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.repository.CollaborationRepository
 import com.rendyhd.vicu.domain.repository.TaskRepository
 import com.rendyhd.vicu.domain.repository.customListTasks
+import com.rendyhd.vicu.util.CustomListContext
 import com.rendyhd.vicu.util.DayClock
 import com.rendyhd.vicu.util.DueDates
 import com.rendyhd.vicu.util.TimeSource
@@ -33,6 +35,7 @@ class TaskWidgetWorker(
     private val behaviorPrefsStore: BehaviorPrefsStore,
     private val dayClock: DayClock,
     private val time: TimeSource,
+    private val collaboration: CollaborationRepository,
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -215,7 +218,13 @@ class TaskWidgetWorker(
                 if (customList != null) {
                     // The same source and evaluator as the list screen: every task (done ones when
                     // the list includes them), not a capped sample, filtered and sorted the same.
-                    taskRepository.customListTasks(customList.filter, day.date, day.zone, activeProjectIds)
+                    // The collaboration conditions read the members and signals stored on the phone.
+                    val context = if (customList.filter.hasCollaborationCondition) {
+                        CustomListContext.of(collaboration.state.first(), collaboration.signals.first())
+                    } else {
+                        CustomListContext.NONE
+                    }
+                    taskRepository.customListTasks(customList.filter, day.date, day.zone, activeProjectIds, context)
                         .map { it.toRow() }
                 } else {
                     emptyList()

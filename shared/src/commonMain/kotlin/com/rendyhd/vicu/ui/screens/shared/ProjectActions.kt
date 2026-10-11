@@ -2,6 +2,9 @@ package com.rendyhd.vicu.ui.screens.shared
 
 import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.domain.model.Project
+import com.rendyhd.vicu.domain.model.ProjectShares
+import com.rendyhd.vicu.domain.model.User
+import com.rendyhd.vicu.domain.repository.CollaborationRepository
 import com.rendyhd.vicu.domain.repository.PlatformRepositoryHooks
 import com.rendyhd.vicu.domain.repository.ProjectRepository
 import com.rendyhd.vicu.util.DayClock
@@ -52,6 +55,8 @@ class ProjectActions(
     private val authManager: AuthManager,
     private val repositoryHooks: PlatformRepositoryHooks,
     private val dayClock: DayClock,
+    /** Sharing (cross-app semantics 9.7); null where the app is built without it (tests). */
+    private val collaboration: CollaborationRepository? = null,
 ) {
     /** The Inbox project's id, null until one is chosen. */
     val inboxProjectId: Flow<Long?> get() = authManager.inboxProjectId
@@ -140,8 +145,38 @@ class ProjectActions(
         }
     }
 
+    // --- Sharing (admins only, online only) ------------------------------------------------------
+
+    /** Who [projectId] is shared with: its owner, the people and the teams. */
+    suspend fun shares(projectId: Long): NetworkResult<ProjectShares> =
+        collaboration?.shares(projectId) ?: NetworkResult.Error(SHARING_UNAVAILABLE)
+
+    /** The person with exactly this username, or null when there is none. */
+    suspend fun findUser(username: String): NetworkResult<User?> =
+        collaboration?.findUser(username) ?: NetworkResult.Error(SHARING_UNAVAILABLE)
+
+    /** Shares [project] with [person] at [permission] (0 can view, 1 can edit, 2 admin). */
+    suspend fun share(project: Project, person: User, permission: Int): ProjectActionResult =
+        (collaboration?.share(project.id, person.username, permission) ?: NetworkResult.Error(SHARING_UNAVAILABLE))
+            .toResult("Shared \"${project.title}\" with ${displayName(person)}")
+
+    suspend fun updateShare(project: Project, person: User, permission: Int): ProjectActionResult =
+        (collaboration?.updateShare(project.id, person.username, permission) ?: NetworkResult.Error(SHARING_UNAVAILABLE))
+            .toResult(null)
+
+    /** Takes [person]'s access away; the message is the one the Undo sits beside. */
+    suspend fun unshare(project: Project, person: User): ProjectActionResult =
+        (collaboration?.removeShare(project.id, person.username) ?: NetworkResult.Error(SHARING_UNAVAILABLE))
+            .toResult(noLongerHasAccessMessage(person))
+
     companion object {
         fun markedReviewedMessage(project: Project): String = "Marked \"${project.title}\" reviewed"
+
+        fun noLongerHasAccessMessage(person: User): String = "${displayName(person)} no longer has access."
+
+        private fun displayName(person: User): String = person.name.trim().ifEmpty { person.username }
+
+        private const val SHARING_UNAVAILABLE = "Sharing is not available"
     }
 }
 

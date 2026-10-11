@@ -35,10 +35,11 @@ import com.rendyhd.vicu.data.sync.TaskRefresher
 import com.rendyhd.vicu.util.SystemTimeSource
 import com.rendyhd.vicu.util.TimeSource
 import com.rendyhd.vicu.worker.SyncEngine
+import com.rendyhd.vicu.worker.CollaborationSync
 
 val databaseModule = module {
     single {
-        getDatabaseBuilder(get()).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        getDatabaseBuilder(get()).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
     }
     single { get<VikunjaDatabase>().taskDao() }
     single { get<VikunjaDatabase>().projectDao() }
@@ -47,6 +48,7 @@ val databaseModule = module {
     single { get<VikunjaDatabase>().attachmentDao() }
     single { get<VikunjaDatabase>().routineArchiveDao() }
     single { get<VikunjaDatabase>().localDataDao() }
+    single { get<VikunjaDatabase>().collaborationDao() }
 
     single { BehaviorPrefsStore(createDataStore(get(), "behavior_prefs")) }
     single { BottomBarPrefsStore(createDataStore(get(), "bottom_bar_prefs")) }
@@ -174,6 +176,22 @@ val repositoryModule = module {
             carrierFinder = get(),
         )
     }
+    single<CollaborationRepository> {
+        CollaborationRepositoryImpl(
+            collaborationDao = get(),
+            taskDao = get(),
+            projectDao = get(),
+            pendingActionDao = get(),
+            api = get(),
+            taskMapper = get(),
+            projectMapper = get(),
+            tokenStorage = get(),
+            tempIds = get(),
+            platformHooks = get(),
+            writeGate = get(),
+        )
+    }
+    single { CollaborationSync(api = get(), collaborationDao = get(), pendingActionDao = get(), tokenStorage = get()) }
     single { RoutineArchiveStore(api = get(), json = get()) }
     single<RoutineRepository> {
         RoutineRepositoryImpl(
@@ -216,6 +234,7 @@ val commonModule = module {
             projectRepository = get(),
             labelRepository = get(),
             staleness = get(),
+            collaboration = get(),
         )
     }
     single { AppMessages() }
@@ -248,6 +267,7 @@ val commonModule = module {
             authManager = get(),
             repositoryHooks = get(),
             dayClock = get(),
+            collaboration = get(),
         )
     }
     single {
@@ -300,6 +320,8 @@ val commonModule = module {
             tempIds = get(),
             writeGate = get(),
             projectCounts = get(),
+            collabSync = get(),
+            collaboration = get(),
         )
     }
 }

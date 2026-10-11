@@ -614,6 +614,21 @@ internal fun buildFilterSummary(list: CustomList): String {
     if (f.labelIds.isNotEmpty()) {
         parts.add("${f.labelIds.size} label(s)")
     }
+    when (f.assigned) {
+        "me" -> parts.add("assigned to me")
+        "others" -> parts.add("assigned to others")
+        "nobody" -> parts.add("unassigned")
+    }
+    when (f.comments) {
+        "unread" -> parts.add("unread comments")
+        "any" -> parts.add("with comments")
+    }
+    if (f.sharedOnly) parts.add("shared only")
+    when (val days = f.changedDays) {
+        null -> {}
+        1 -> parts.add("changed today")
+        else -> parts.add("changed in $days days")
+    }
     if (f.includeDone) {
         parts.add("incl. done")
     }

@@ -54,3 +54,24 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         TASK_METADATA_MIGRATION_SQL.forEach { connection.execSQL(it) }
     }
 }
+
+/**
+ * Version 4 adds collaboration (docs/cross-app-semantics-v1.md section 9): the assignees of a task,
+ * your permission on a project, the members of each project, the comment signals of the tasks in
+ * shared projects and the comment threads that were opened on this phone. Public so a test can run
+ * the statements against a real SQLite.
+ */
+val COLLABORATION_MIGRATION_SQL: List<String> = listOf(
+    "ALTER TABLE `tasks` ADD COLUMN `assigneesJson` TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE `projects` ADD COLUMN `maxPermission` INTEGER NOT NULL DEFAULT -1",
+    "CREATE TABLE IF NOT EXISTS `project_members` (`projectId` INTEGER NOT NULL, `userId` INTEGER NOT NULL, `username` TEXT NOT NULL, `name` TEXT NOT NULL, `position` INTEGER NOT NULL, PRIMARY KEY(`projectId`, `userId`))",
+    "CREATE TABLE IF NOT EXISTS `task_signals` (`taskId` INTEGER NOT NULL, `commentCount` INTEGER NOT NULL, `isUnread` INTEGER NOT NULL, PRIMARY KEY(`taskId`))",
+    "CREATE TABLE IF NOT EXISTS `task_comments` (`id` INTEGER NOT NULL, `taskId` INTEGER NOT NULL, `authorId` INTEGER NOT NULL, `authorUsername` TEXT NOT NULL, `authorName` TEXT NOT NULL, `comment` TEXT NOT NULL, `created` TEXT NOT NULL, `updated` TEXT NOT NULL, `pending` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+    "CREATE INDEX IF NOT EXISTS `index_task_comments_taskId` ON `task_comments` (`taskId`)",
+)
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(connection: SQLiteConnection) {
+        COLLABORATION_MIGRATION_SQL.forEach { connection.execSQL(it) }
+    }
+}

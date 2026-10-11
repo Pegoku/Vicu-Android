@@ -234,4 +234,55 @@ class CustomListWireTest {
         assertFalse("__unknown__" in written)
         assertFalse("__unknown__" in written.getValue("filter").jsonObject)
     }
+
+    // --- Collaboration and activity conditions (cross-app semantics 3.3) ----------------------
+
+    @Test
+    fun `the collaboration conditions are absent until set and never written while absent`() {
+        val value = decode(withDefaults, """{"id":"a","name":"A","filter":{"due_date_filter":"all"}}""")
+        assertNull(value.filter.assigned)
+        assertNull(value.filter.changedWithinDays)
+        for (json in listOf(withDefaults, withoutDefaults)) {
+            val filter = encode(json, value).getValue("filter").jsonObject
+            for (key in listOf("assigned", "comments", "shared_only", "changed_within_days")) {
+                assertFalse(key in filter, "$key with encodeDefaults=${json.configuration.encodeDefaults}")
+            }
+        }
+        val domain = value.toDomain().filter
+        assertNull(domain.assigned)
+        assertFalse(domain.sharedOnly)
+        assertNull(domain.changedDays)
+    }
+
+    @Test
+    fun `set conditions round trip through the domain list`() {
+        val value = decode(
+            withDefaults,
+            """{"id":"a","name":"A","filter":{"assigned":"me","comments":"unread","shared_only":true,"changed_within_days":7}}""",
+        )
+        val domain = value.toDomain()
+        assertEquals("me", domain.filter.assigned)
+        assertEquals("unread", domain.filter.comments)
+        assertTrue(domain.filter.sharedOnly)
+        assertEquals(7, domain.filter.changedDays)
+
+        val filter = encode(withoutDefaults, domain.toWire(preserving = value)).getValue("filter").jsonObject
+        assertEquals("me", filter.getValue("assigned").jsonPrimitive.content)
+        assertEquals("unread", filter.getValue("comments").jsonPrimitive.content)
+        assertTrue(filter.getValue("shared_only").jsonPrimitive.boolean)
+        assertEquals("7", filter.getValue("changed_within_days").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a value from a newer app is kept and false or below one is not written`() {
+        val newer = decode(withDefaults, """{"id":"a","name":"A","filter":{"assigned":"team","comments":"mentions"}}""").toDomain()
+        assertEquals("team", newer.toWire().filter.assigned)
+        assertEquals("mentions", newer.toWire().filter.comments)
+        assertFalse(newer.filter.hasCollaborationCondition, "an unknown value is no condition")
+
+        val cleared = CustomList("a", "A", "", CustomListFilter(assigned = "", sharedOnly = false, changedWithinDays = 0)).toWire()
+        assertNull(cleared.filter.assigned)
+        assertNull(cleared.filter.sharedOnly)
+        assertNull(cleared.filter.changedWithinDays)
+    }
 }

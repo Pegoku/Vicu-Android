@@ -85,8 +85,8 @@ interface PendingActionDao {
     suspend fun resetProcessingToPending()
 
     /**
-     * Ids of the tasks whose local row holds a change the server has not accepted yet. A refresh
-     * must not overwrite these rows.
+     * Ids of the tasks whose local row holds a change the server has not accepted yet (assignee
+     * changes included: they live in the row's assignees). A refresh must not overwrite these rows.
      *
      * Failed actions count too, on purpose: the row is the only copy of the user's change until
      * they retry or discard it from the failed-changes banner. They do not protect it for ever:
@@ -94,7 +94,7 @@ interface PendingActionDao {
      * start of each run, and discarding deletes them at once, so the server version wins after
      * the next refresh in both cases.
      */
-    @Query("SELECT entityId FROM pending_actions WHERE entityType IN ('task', 'routine') AND status IN ('pending', 'failed', 'processing')")
+    @Query("SELECT entityId FROM pending_actions WHERE entityType IN ('task', 'routine', 'assignee') AND status IN ('pending', 'failed', 'processing')")
     suspend fun getTaskIdsWithPendingActions(): List<Long>
 
     /** Ids of the labels with a change the server has not accepted yet; a refresh must not overwrite or delete them. */
@@ -121,12 +121,12 @@ interface PendingActionDao {
     suspend fun getActiveByEntity(entityType: String, entityId: Long): List<PendingActionEntity>
 
     /**
-     * How many changes for task [taskId] are waiting to be sent or being sent: its own actions and
-     * the label changes on it. Failed ones do not count; the user retries or discards them.
+     * How many changes for task [taskId] are waiting to be sent or being sent: its own actions, the
+     * label changes on it, and its assignee and comment changes. Failed ones do not count; the user retries or discards them.
      */
     @Query(
         "SELECT COUNT(*) FROM pending_actions WHERE status IN ('pending', 'processing') AND (" +
-            "(entityType = 'task' AND entityId = :taskId) OR " +
+            "(entityType IN ('task', 'assignee', 'comment') AND entityId = :taskId) OR " +
             "(entityType = 'label' AND actionType IN ('add_label', 'remove_label') AND payload LIKE :labelPayloadPattern))",
     )
     suspend fun countWaitingForTask(taskId: Long, labelPayloadPattern: String): Int
@@ -181,4 +181,20 @@ interface PendingActionDao {
     suspend fun queuePatchActionMerging(action: PendingActionEntity) {
         queueTaskActionMerging(action)
     }
+
+    @Query("UPDATE pending_actions SET payload = :payload WHERE id = :id")
+    suspend fun updatePayload(id: Long, payload: String)
+
+    /** Queues an assignee or comment change with the folding rules of [resolveCollabQueueMerge]. */
+    @Transaction
+    suspend fun queueCollabAction(action: PendingActionEntity) {
+        val merge = resolveCollabQueueMerge(getActiveByEntity(action.entityType, action.entityId), action)
+        merge.deleteIds.forEach { deleteById(it) }
+        merge.rewrites.forEach { (id, payload) -> updatePayload(id, payload) }
+        if (merge.insert) insert(action)
+    }
+
+    /** The waiting and failed changes of one kind for one task, oldest first (comment overlay, temp id remaps). */
+    @Query("SELECT * FROM pending_actions WHERE entityType = :entityType AND entityId = :taskId AND status IN ('pending', 'failed', 'processing') ORDER BY createdAt ASC, id ASC")
+    suspend fun getActiveForTask(entityType: String, taskId: Long): List<PendingActionEntity>
 }

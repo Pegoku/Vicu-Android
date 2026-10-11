@@ -64,6 +64,37 @@ object CrossAppFixture {
         val expect: List<Long>,
     )
 
+    /** A task of the `customListActivity` block: the collaboration fields next to the basics. */
+    @Serializable
+    data class ActivityTask(
+        val id: Long,
+        val projectId: Long,
+        val due: String? = null,
+        val done: Boolean,
+        val assignees: List<Long>,
+        val commentCount: Int,
+        val unread: Boolean,
+        val updated: String,
+    )
+
+    @Serializable
+    data class ActivityVector(
+        val name: String,
+        val today: String,
+        val signedOut: Boolean = false,
+        val filter: CustomListWireFilter,
+        val expect: List<Long>,
+    )
+
+    /** Section 3.3: you, the shared projects, the tasks and the vectors. */
+    @Serializable
+    data class ActivityBlock(
+        val me: Long,
+        val shared: List<Long>,
+        val tasks: List<ActivityTask>,
+        val vectors: List<ActivityVector>,
+    )
+
     @Serializable
     data class ReviewMeta(
         val state: String,
@@ -96,6 +127,7 @@ object CrossAppFixture {
         val tasks: List<FixtureTask>,
         val smartLists: List<SmartList>,
         val customLists: List<CustomListVector>,
+        val customListActivity: ActivityBlock,
         val review: List<Review>,
     )
 

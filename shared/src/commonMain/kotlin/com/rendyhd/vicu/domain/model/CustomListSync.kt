@@ -37,6 +37,11 @@ data class CustomListWireFilter(
     @SerialName("include_today_all_projects") val includeTodayAllProjects: Boolean = false,
     /** Absent means true. Never written while absent, whatever the JSON configuration. */
     @SerialName("include_overdue") @EncodeDefault(EncodeDefault.Mode.NEVER) val includeOverdue: Boolean? = null,
+    // The collaboration and activity conditions (section 3.3), written only when set.
+    @SerialName("assigned") @EncodeDefault(EncodeDefault.Mode.NEVER) val assigned: String? = null,
+    @SerialName("comments") @EncodeDefault(EncodeDefault.Mode.NEVER) val comments: String? = null,
+    @SerialName("shared_only") @EncodeDefault(EncodeDefault.Mode.NEVER) val sharedOnly: Boolean? = null,
+    @SerialName("changed_within_days") @EncodeDefault(EncodeDefault.Mode.NEVER) val changedWithinDays: Int? = null,
     @SerialName(UNKNOWN_FIELDS_KEY) val unknown: JsonObject = NO_UNKNOWN_FIELDS,
 )
 
@@ -153,6 +158,12 @@ fun CustomList.toWire(preserving: CustomListWire? = null): CustomListWire = Cust
         includeTodayAllProjects = filter.includeTodayAllProjects,
         // Absent unless the user turned it off, like desktop (which removes the key when on).
         includeOverdue = if (filter.includeOverdue == false) false else null,
+        // Like desktop: a non-empty string is kept (a value from a newer app too), shared_only only
+        // when true, changed_within_days only as 1 or more.
+        assigned = filter.assigned?.takeIf { it.isNotEmpty() },
+        comments = filter.comments?.takeIf { it.isNotEmpty() },
+        sharedOnly = if (filter.sharedOnly) true else null,
+        changedWithinDays = filter.changedDays,
         unknown = preserving?.filter?.unknown ?: NO_UNKNOWN_FIELDS,
     ),
     unknown = preserving?.unknown ?: NO_UNKNOWN_FIELDS,
@@ -174,5 +185,9 @@ fun CustomListWire.toDomain(): CustomList = CustomList(
         includeDone = filter.includeDone,
         includeTodayAllProjects = filter.includeTodayAllProjects,
         includeOverdue = filter.includeOverdue,
+        assigned = filter.assigned?.takeIf { it.isNotEmpty() },
+        comments = filter.comments?.takeIf { it.isNotEmpty() },
+        sharedOnly = filter.sharedOnly == true,
+        changedWithinDays = filter.changedWithinDays,
     ),
 )

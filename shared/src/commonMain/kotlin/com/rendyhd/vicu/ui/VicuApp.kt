@@ -117,6 +117,11 @@ import com.rendyhd.vicu.ui.navigation.routeKey
 import com.rendyhd.vicu.ui.navigation.startDestinationFor
 import com.rendyhd.vicu.ui.navigation.toRoute
 import com.rendyhd.vicu.ui.screens.taskdetail.EditorBackState
+import com.rendyhd.vicu.ui.components.collab.CollabUi
+import com.rendyhd.vicu.ui.components.collab.CollabViewModel
+import com.rendyhd.vicu.ui.components.collab.LocalCollab
+import com.rendyhd.vicu.ui.screens.comments.TaskCommentsScreen
+import com.rendyhd.vicu.ui.screens.comments.TaskCommentsViewModel
 import com.rendyhd.vicu.ui.screens.taskdetail.EditorOverlay
 import com.rendyhd.vicu.ui.screens.taskdetail.TaskDetailScreen
 import com.rendyhd.vicu.ui.screens.taskdetail.TaskDetailViewModel
@@ -245,6 +250,8 @@ fun VicuApp(
     var showTaskDetailSheet by rememberSaveable { mutableStateOf(false) }
     var taskDetailTaskId by rememberSaveable { mutableLongStateOf(0L) }
     var showNewListDialog by rememberSaveable { mutableStateOf(false) }
+    // The task whose Comments screen is open over everything (0 when none); saved like the editor.
+    var commentsTaskId by rememberSaveable { mutableLongStateOf(0L) }
     var showNewProjectDialog by rememberSaveable { mutableStateOf(false) }
     // Saved with the instance state: a rotation reopens the sheet with the shared text and files.
     var pendingSharedContent by rememberSaveable(stateSaver = SharedContentSaver) {
@@ -489,6 +496,21 @@ fun VicuApp(
 
     val drawerViewModel: DrawerViewModel = koinViewModel()
     val drawerUiState by drawerViewModel.uiState.collectAsStateWithLifecycle()
+
+    // Collaboration (assignees and comments) for the rows, the editor and the Comments screen.
+    val collabViewModel: CollabViewModel = koinViewModel()
+    val collabState by collabViewModel.state.collectAsStateWithLifecycle()
+    val collabSignals by collabViewModel.signals.collectAsStateWithLifecycle()
+    val commentsViewModel: TaskCommentsViewModel = koinViewModel()
+    val collabUi = remember(collabState, collabSignals) {
+        CollabUi(
+            state = collabState,
+            signals = collabSignals,
+            openComments = { taskId -> commentsTaskId = taskId },
+            setAssigned = collabViewModel::setAssigned,
+            memberPermissions = collabViewModel::memberPermissions,
+        )
+    }
     val projectProgress by drawerViewModel.projectProgress.collectAsStateWithLifecycle()
     val fabAlignStart by drawerViewModel.fabAlignStart.collectAsStateWithLifecycle()
     // The screens' + buttons, drawn as one by AppFab.
@@ -505,6 +527,7 @@ fun VicuApp(
         LocalIs24Hour provides is24Hour,
         LocalDateFormat provides dateFormat,
         LocalTaskRowActions provides taskRowActions,
+        LocalCollab provides collabUi,
     )
 
     // Build dynamic bottom bar items from config
@@ -695,6 +718,23 @@ fun VicuApp(
                 viewModel = taskDetailViewModel,
                 onOpenTask = onTaskClick,
                 backState = editorBackState,
+                // While the comments are open over the editor, back closes them first.
+                backEnabled = backEnabled && commentsTaskId == 0L,
+            )
+        }
+
+        // The Comments screen of a task, over the editor or the list it was opened from.
+        val commentsBackState = remember { EditorBackState() }
+        EditorOverlay(
+            taskId = commentsTaskId.takeIf { it != 0L && authState == AuthState.Authenticated },
+            backState = commentsBackState,
+            stayOpen = { false },
+        ) { taskId, backEnabled ->
+            TaskCommentsScreen(
+                taskId = taskId,
+                onClose = { commentsTaskId = 0L },
+                viewModel = commentsViewModel,
+                backState = commentsBackState,
                 backEnabled = backEnabled,
             )
         }
@@ -706,7 +746,7 @@ fun VicuApp(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = if (showBottomBar && !taskDetailVisible) 80.dp else 0.dp),
+                    .padding(bottom = if (showBottomBar && !taskDetailVisible && commentsTaskId == 0L) 80.dp else 0.dp),
             )
         }
 
