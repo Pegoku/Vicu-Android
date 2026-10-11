@@ -21,6 +21,7 @@ import com.rendyhd.vicu.data.mapper.LabelMapper
 import com.rendyhd.vicu.data.mapper.ProjectMapper
 import com.rendyhd.vicu.data.mapper.TaskMapper
 import com.rendyhd.vicu.data.remote.BaseUrlHolder
+import com.rendyhd.vicu.data.remote.KtorClientFactory
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
 import com.rendyhd.vicu.data.repository.FakePendingActionDao
 import com.rendyhd.vicu.data.repository.FakeProjectDao
@@ -151,6 +152,11 @@ class SyncEngineHarness(
     val writeGate: TaskWriteGate? = null,
     /** Comments and signals the engine's collaboration replay writes to. */
     val collaborationDao: FakeCollaborationDao = FakeCollaborationDao(),
+    /**
+     * Sends through the app's own HTTP pipeline (base URL, token, 401 handling) instead of a bare
+     * client; sign in with [signInWithApiToken]. Paths then start with `/api/v2/`.
+     */
+    productionPipeline: Boolean = false,
     handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
 ) {
     private val requestLock = Mutex()
@@ -162,16 +168,35 @@ class SyncEngineHarness(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val client = HttpClient(
-        MockEngine { request ->
-            requestLock.withLock { recorded += "${request.method.value} ${request.url.encodedPath}" }
-            handler(request)
-        },
-    ) {
-        install(ContentNegotiation) { json(authTestJson) }
+    val storage = InMemoryTokenStorage()
+    val authManager = AuthManager(
+        platformAuthHooks = RecordingAuthHooks(),
+        tokenStorage = storage,
+        apiServiceProvider = { api },
+        appScope = scope,
+        networkMonitor = FakeNetworkMonitor(),
+    )
+
+    private val mockEngine = MockEngine { request ->
+        requestLock.withLock { recorded += "${request.method.value} ${request.url.encodedPath}" }
+        handler(request)
     }
 
-    val api = VikunjaApiService(client, authTestJson)
+    private val client: HttpClient = if (productionPipeline) {
+        KtorClientFactory.create(mockEngine, authTestJson, BaseUrlHolder(storage), authManager)
+    } else {
+        HttpClient(mockEngine) { install(ContentNegotiation) { json(authTestJson) } }
+    }
+
+    val api: VikunjaApiService = VikunjaApiService(client, authTestJson)
+
+    /** Puts the device in an existing session signed in with an API token (for [productionPipeline]). */
+    suspend fun signInWithApiToken(token: String = "user-token") {
+        storage.storeApiToken(token, Long.MAX_VALUE)
+        storage.storeAuthMethod("api_token")
+        storage.storeVikunjaUrl(SERVER)
+        authManager.ensureInitializedAndGetToken()
+    }
 
     /** Unconfined, so a background position request starts at once; a test waits for it with awaitIdle(). */
     val positioner = ListPositioner(
@@ -180,7 +205,6 @@ class SyncEngineHarness(
         storePosition = { taskId, position -> taskDao.updatePosition(taskId, position) },
     )
     private val enginePositioner = if (anchorCreates) positioner else null
-    val storage = InMemoryTokenStorage()
     val cursorStore = SyncCursorStore(InMemoryPreferencesDataStore())
     val refresher = TaskRefresher(
         taskDao = taskDao,
@@ -189,13 +213,6 @@ class SyncEngineHarness(
         taskMapper = TaskMapper(authTestJson),
         platformHooks = hooks,
         cursorStore = cursorStore,
-    )
-    val authManager = AuthManager(
-        platformAuthHooks = RecordingAuthHooks(),
-        tokenStorage = storage,
-        apiServiceProvider = { api },
-        appScope = scope,
-        networkMonitor = FakeNetworkMonitor(),
     )
 
     /** Creates another engine over the same DAOs, like a second worker in the same process. */
@@ -230,6 +247,8 @@ class SyncEngineHarness(
     }
 
     companion object {
+        const val SERVER = "https://tasks.example.com"
+
         fun MockRequestHandleScope.emptyPage(): HttpResponseData =
             respond(content = EMPTY_PAGE, status = HttpStatusCode.OK, headers = authTestJsonHeaders)
 

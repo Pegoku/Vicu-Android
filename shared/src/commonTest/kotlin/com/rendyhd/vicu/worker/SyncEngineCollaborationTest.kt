@@ -1,5 +1,6 @@
 package com.rendyhd.vicu.worker
 
+import com.rendyhd.vicu.auth.AuthState
 import com.rendyhd.vicu.auth.authTestJsonHeaders
 import com.rendyhd.vicu.data.local.dao.AssigneePayload
 import com.rendyhd.vicu.data.local.dao.CollabQueue
@@ -114,6 +115,33 @@ class SyncEngineCollaborationTest {
         val left = h.pendingActionDao.snapshot()
         assertEquals(listOf(CollabQueue.ASSIGNEE to "failed"), left.map { it.entityType to it.status })
         assertEquals(1, h.count(HttpMethod.Post, "/tasks/12/comments"), "the next change was still sent")
+        h.close()
+    }
+
+    @Test
+    fun `a comment the API token may not post fails visibly, the queue goes on and the session stays`() = runTest {
+        // Vikunja answers 401 to a token without the comments permission; the token still reads the
+        // project list, so only that change was refused (cross-app semantics 9.7).
+        val h = SyncEngineHarness(productionPipeline = true) { request ->
+            when {
+                request.method == HttpMethod.Post && request.url.encodedPath == "/api/v2/tasks/12/comments" ->
+                    respond("""{"code":11,"message":"invalid token"}""", HttpStatusCode.Unauthorized, authTestJsonHeaders)
+                request.method == HttpMethod.Post && request.url.encodedPath == "/api/v2/tasks/11/assignees" ->
+                    created("""{"user_id":2}""")
+                request.method == HttpMethod.Get -> emptyPage()
+                else -> error("Unexpected ${request.method.value} ${request.url.encodedPath}")
+            }
+        }
+        h.signInWithApiToken()
+        h.pendingActionDao.insert(comment(12, CollabQueue.CREATE, -5, "<p>hi</p>"))
+        h.pendingActionDao.insert(assign(11, CollabQueue.ADD, 2))
+
+        h.engine.performSync()
+
+        val left = h.pendingActionDao.snapshot()
+        assertEquals(listOf(CollabQueue.COMMENT to "failed"), left.map { it.entityType to it.status })
+        assertEquals(1, h.count(HttpMethod.Post, "/api/v2/tasks/11/assignees"), "the next change was still sent")
+        assertEquals(AuthState.Authenticated, h.authManager.authState.value)
         h.close()
     }
 

@@ -157,6 +157,12 @@ object Collaboration {
     /** Whether a member can be picked in Assign: unknown counts as read and write. */
     fun canMemberWrite(permission: Int?): Boolean = permission == null || permission >= Permission.WRITE
 
+    /**
+     * Whether Notify me is offered for a sign-in [authMethod] (section 9.7): Vikunja does not let
+     * API tokens follow tasks, so only password and SSO sign-ins can.
+     */
+    fun canFollowTasks(authMethod: String?): Boolean = authMethod == "password" || authMethod == "oidc"
+
     // --- Comment HTML ------------------------------------------------------------------------
 
     /** A letter, a decimal digit or `_`, looked at one UTF-16 unit at a time. */

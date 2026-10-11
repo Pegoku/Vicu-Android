@@ -280,7 +280,9 @@ class SyncEngine(
                     run.hasRetriableFailures = true
                 }
                 // The server refused the change: retrying cannot help. It is shown as a
-                // failed change the user can retry or discard.
+                // failed change the user can retry or discard. So is a comment or assignee
+                // change the API token has no permission for: the HTTP client turns that 401
+                // into a 403 once the token proved it still works (cross-app semantics 9.7).
                 else -> pendingActionDao.markFailed(action.id, DateUtils.nowIso())
             }
         }
