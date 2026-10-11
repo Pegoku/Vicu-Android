@@ -42,7 +42,7 @@ import com.rendyhd.vicu.ui.components.selection.SelectionViewModel
 import com.rendyhd.vicu.ui.components.shared.CustomListDialog
 import com.rendyhd.vicu.ui.components.shared.EmptyState
 import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
-import com.rendyhd.vicu.ui.components.shared.VicuFab
+import com.rendyhd.vicu.ui.components.shared.ScreenFab
 import com.rendyhd.vicu.ui.components.shared.VicuTopAppBar
 import com.rendyhd.vicu.ui.components.shared.rememberVicuTopBarScroll
 import com.rendyhd.vicu.ui.components.task.SwipeableTaskItem
@@ -123,7 +123,7 @@ fun CustomListScreen(
                 val addToProject = state.customList?.filter?.addToProjectId?.takeIf { requested ->
                     requested != 0L && projects.any { it.id == requested && !it.isArchived }
                 }
-                VicuFab(onClick = { onShowTaskEntry(addToProject, null) }, expanded = !listState.canScrollBackward)
+                ScreenFab(onClick = { onShowTaskEntry(addToProject, null) }, expanded = !listState.canScrollBackward)
             }
         },
         floatingActionButtonPosition = if (LocalFabAlignStart.current) FabPosition.Start else FabPosition.End,

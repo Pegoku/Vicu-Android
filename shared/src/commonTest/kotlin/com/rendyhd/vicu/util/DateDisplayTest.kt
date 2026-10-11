@@ -47,6 +47,7 @@ class DateDisplayFixtureTest {
         "header.full" -> DateContext.HEADER_FULL
         "logbook.group" -> DateContext.LOGBOOK_GROUP
         "logbook.time" -> DateContext.LOGBOOK_TIME
+        "comment.day" -> DateContext.COMMENT_DAY
         else -> error("unknown context $name")
     }
 
@@ -54,7 +55,7 @@ class DateDisplayFixtureTest {
 
     @Test
     fun `the fixture has the vectors`() {
-        assertEquals(206, vectors.size)
+        assertEquals(220, vectors.size)
         assertEquals(DateContext.entries.size, vectors.map { it.context }.distinct().size)
     }
 

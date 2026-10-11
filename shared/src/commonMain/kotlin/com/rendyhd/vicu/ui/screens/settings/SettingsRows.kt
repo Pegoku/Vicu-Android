@@ -53,6 +53,7 @@ import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.ui.components.section.sectionStateDescription
 import com.rendyhd.vicu.ui.components.shared.IconRegistry
+import com.rendyhd.vicu.ui.theme.LocalVicuColors
 import com.rendyhd.vicu.ui.theme.VicuChipShape
 import com.rendyhd.vicu.util.CustomListFilterBuilder
 import com.rendyhd.vicu.util.parseHexColor
@@ -525,9 +526,16 @@ internal fun BottomBarSlotRow(
     slotIndex: Int,
     projects: List<Project>,
     customLists: List<CustomList>,
+    smartListColors: Boolean,
     onClick: () -> Unit,
 ) {
     val icon = IconRegistry.resolveIcon(slot)
+    // The colour the icon has in the bar.
+    val tint = IconRegistry.smartListIdentity(slot.type)
+        ?.takeIf { smartListColors }
+        ?.color(LocalVicuColors.current.identity)
+        ?: parseHexColor(slot.colorHex)
+        ?: MaterialTheme.colorScheme.onSurfaceVariant
     val label = when (slot.type) {
         BottomBarSlotType.TODAY -> "Today"
         BottomBarSlotType.UPCOMING -> "Upcoming"
@@ -563,7 +571,7 @@ internal fun BottomBarSlotRow(
         Icon(
             icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = tint,
             modifier = Modifier.size(22.dp),
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -605,6 +613,21 @@ internal fun buildFilterSummary(list: CustomList): String {
     }
     if (f.labelIds.isNotEmpty()) {
         parts.add("${f.labelIds.size} label(s)")
+    }
+    when (f.assigned) {
+        "me" -> parts.add("assigned to me")
+        "others" -> parts.add("assigned to others")
+        "nobody" -> parts.add("unassigned")
+    }
+    when (f.comments) {
+        "unread" -> parts.add("unread comments")
+        "any" -> parts.add("with comments")
+    }
+    if (f.sharedOnly) parts.add("shared only")
+    when (val days = f.changedDays) {
+        null -> {}
+        1 -> parts.add("changed today")
+        else -> parts.add("changed in $days days")
     }
     if (f.includeDone) {
         parts.add("incl. done")

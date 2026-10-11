@@ -3,6 +3,7 @@ package com.rendyhd.vicu.ui.screens.setup
 import com.rendyhd.vicu.ui.rememberOidcLauncher
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -95,6 +96,8 @@ fun SetupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Opaque: Setup fades in over the screen it replaces, which stays under it (NavTransitions).
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()

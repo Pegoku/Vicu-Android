@@ -78,6 +78,8 @@ data class DrawerUiState(
     val listsExpanded: Boolean = true,
     val tagsExpanded: Boolean = true,
     val bottomBarSlots: List<BottomBarSlot> = BottomBarSlot.DEFAULT_SLOTS,
+    /** Whether the bottom bar draws the smart list icons in their identity colours (Settings). */
+    val bottomBarSmartListColors: Boolean = true,
     val inboxProjectId: Long = 0L,
     val reviewEnabled: Boolean = true,
     val reviewOverdueCount: Int = 0,
@@ -150,13 +152,16 @@ class DrawerViewModel(
      */
     private val stored: StateFlow<DrawerUiState> = combine(
         sources,
-        bottomBarPrefsStore.slots,
+        bottomBarPrefsStore.config,
         combine(reviewPrefsStore.getPrefs(), routinePrefsStore.enabled) { review, routines -> review to routines },
         labelOrderPrefsStore.getOrder(),
         // A review that falls due at midnight must show up in the badge without a restart.
         dayClock.today,
-    ) { sources, slots, (reviewPrefs, routinesEnabled), labelOrder, today ->
-        buildDrawerState(sources, slots, reviewPrefs, labelOrder, today, routinesEnabled)
+    ) { sources, bottomBar, (reviewPrefs, routinesEnabled), labelOrder, today ->
+        buildDrawerState(
+            sources, bottomBar.slots, reviewPrefs, labelOrder, today, routinesEnabled,
+            bottomBarSmartListColors = bottomBar.smartListColors,
+        )
     }.flowOn(dispatchers.default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DrawerUiState())
 
@@ -446,6 +451,7 @@ internal fun buildDrawerState(
     labelOrder: List<Long>,
     today: LocalDate,
     routinesEnabled: Boolean = true,
+    bottomBarSmartListColors: Boolean = true,
 ): DrawerUiState {
     val inboxId = sources.inboxProjectId
     val projects = sources.projects
@@ -482,6 +488,7 @@ internal fun buildDrawerState(
         listsExpanded = sources.expanded.lists,
         tagsExpanded = sources.expanded.tags,
         bottomBarSlots = slots,
+        bottomBarSmartListColors = bottomBarSmartListColors,
         inboxProjectId = inboxId ?: 0L,
         reviewEnabled = reviewPrefs.enabled,
         reviewOverdueCount = reviewOverdue,

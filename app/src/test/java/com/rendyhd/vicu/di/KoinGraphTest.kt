@@ -8,6 +8,7 @@ import androidx.work.WorkerParameters
 import com.rendyhd.vicu.data.local.VikunjaDatabase
 import com.rendyhd.vicu.data.local.VikunjaDatabase_Impl
 import com.rendyhd.vicu.data.local.dao.AttachmentDao
+import com.rendyhd.vicu.data.local.dao.CollaborationDao
 import com.rendyhd.vicu.data.local.dao.LabelDao
 import com.rendyhd.vicu.data.local.dao.LocalDataDao
 import com.rendyhd.vicu.data.local.dao.PendingActionDao
@@ -136,6 +137,7 @@ class KoinGraphTest {
         single<AttachmentDao> { emptyDao() }
         single<RoutineArchiveDao> { emptyDao() }
         single<LocalDataDao> { emptyDao() }
+        single<CollaborationDao> { emptyDao() }
         // The real monitor registers a ConnectivityManager callback as it is built.
         single<NetworkMonitor> {
             object : NetworkMonitor {

@@ -59,9 +59,19 @@ internal fun LazyListScope.bottomBarSection(
                 slotIndex = index,
                 projects = state.projects,
                 customLists = state.customLists,
+                smartListColors = state.bottomBarSmartListColors,
                 onClick = { openDialog(SettingsDialog.BottomBarSlot(index)) },
             )
         }
+    }
+
+    item(key = "bottombar_smart_list_colors") {
+        SwitchRow(
+            label = "Smart list colours",
+            description = "Draw the Inbox, Today, Upcoming and Anytime icons in their own colours",
+            checked = state.bottomBarSmartListColors,
+            onCheckedChange = viewModel::setBottomBarSmartListColors,
+        )
     }
 
     item(key = "bottombar_reset") {

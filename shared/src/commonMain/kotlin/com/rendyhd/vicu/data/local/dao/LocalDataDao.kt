@@ -8,7 +8,8 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Bulk deletes for [com.rendyhd.vicu.data.local.LocalDataWiper]. The tables fall into two groups:
  *
- *  - caches of server data (tasks, projects, labels, attachments), which a sync rebuilds;
+ *  - caches of server data (tasks, projects, labels, attachments, project members, comment
+ *    signals and comment threads), which a sync rebuilds;
  *  - local-only state that nothing can rebuild: the offline queue (`pending_actions`) and the
  *    phone-only routine history of versions before 1.9 that is waiting to be uploaded to the
  *    server (`routine_occurrence_archive`, empty once the upload has run).
@@ -58,6 +59,26 @@ interface LocalDataDao {
     @Query("DELETE FROM routine_occurrence_archive")
     suspend fun deleteAllRoutineArchive()
 
+    @Query("DELETE FROM project_members")
+    suspend fun deleteAllProjectMembers()
+
+    @Query("DELETE FROM task_signals")
+    suspend fun deleteAllTaskSignals()
+
+    /** Comments, except those written offline that the queue still has to send. */
+    @Query(
+        """
+        DELETE FROM task_comments WHERE pending = 0 OR taskId NOT IN (
+            SELECT entityId FROM pending_actions
+            WHERE entityType = 'comment' AND status IN ('pending', 'failed', 'processing')
+        )
+        """
+    )
+    suspend fun deleteCommentsWithoutQueuedActions()
+
+    @Query("DELETE FROM task_comments")
+    suspend fun deleteAllTaskComments()
+
     /** Entries of phone-only routine history that have not been uploaded yet. */
     @Query("SELECT COUNT(*) FROM routine_occurrence_archive")
     fun observeRoutineArchiveCount(): Flow<Int>
@@ -73,6 +94,9 @@ interface LocalDataDao {
         deleteAllProjects()
         deleteLabelsWithoutQueuedActions()
         deleteAllAttachments()
+        deleteAllProjectMembers()
+        deleteAllTaskSignals()
+        deleteCommentsWithoutQueuedActions()
     }
 
     /** Drops the offline queue and every cache table, but keeps the routine history archive. */
@@ -83,6 +107,9 @@ interface LocalDataDao {
         deleteAllProjects()
         deleteAllLabels()
         deleteAllAttachments()
+        deleteAllProjectMembers()
+        deleteAllTaskSignals()
+        deleteAllTaskComments()
     }
 
     /** Every table: the account is gone (sign-out, or a different account signed in). */
@@ -94,5 +121,8 @@ interface LocalDataDao {
         deleteAllLabels()
         deleteAllAttachments()
         deleteAllRoutineArchive()
+        deleteAllProjectMembers()
+        deleteAllTaskSignals()
+        deleteAllTaskComments()
     }
 }

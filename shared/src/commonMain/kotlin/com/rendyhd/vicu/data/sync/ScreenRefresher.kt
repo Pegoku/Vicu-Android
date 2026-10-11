@@ -1,5 +1,6 @@
 package com.rendyhd.vicu.data.sync
 
+import com.rendyhd.vicu.domain.repository.CollaborationRepository
 import com.rendyhd.vicu.domain.repository.LabelRepository
 import com.rendyhd.vicu.domain.repository.ProjectRepository
 import com.rendyhd.vicu.domain.repository.TaskRepository
@@ -21,6 +22,8 @@ class ScreenRefresher(
     private val projectRepository: ProjectRepository,
     private val labelRepository: LabelRepository,
     private val staleness: SyncStaleness,
+    /** Project members and comment signals (cross-app semantics 9); read after the projects. */
+    private val collaboration: CollaborationRepository? = null,
 ) {
     private val mutex = Mutex()
 
@@ -45,6 +48,8 @@ class ScreenRefresher(
         if (projectResult is NetworkResult.Error) return@withLock projectResult
         val labelResult = labelRepository.refreshAll()
         if (labelResult is NetworkResult.Error) return@withLock labelResult
+        // Collaboration never fails a screen's refresh: rows simply keep their last signals.
+        collaboration?.refresh(force = manual)
 
         if (tasks == null) staleness.markSynced()
         NetworkResult.Success(Unit)

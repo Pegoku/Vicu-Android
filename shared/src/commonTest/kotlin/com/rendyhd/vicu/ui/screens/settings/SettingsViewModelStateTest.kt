@@ -138,6 +138,7 @@ class SettingsViewModelStateTest {
         assertEquals(listOf("Old"), s.archivedProjects.map { it.title })
         assertTrue(s.isOnline)
         assertTrue(s.supportsQuickAddTile)
+        assertTrue(s.bottomBarSmartListColors)
         assertEquals(ThemeMode.System, s.themeMode)
         assertNull(s.error)
         assertNull(s.successMessage)
@@ -157,10 +158,12 @@ class SettingsViewModelStateTest {
         r.vm.setLogbookRetentionEnabled(true)
         r.vm.setWidgetSmartAdd(false)
         r.vm.setNlpEnabled(!before.nlpConfig.enabled)
+        r.vm.setBottomBarSmartListColors(false)
         awaitUntil {
             val s = r.vm.uiState.value
             s.themeMode == ThemeMode.Dark && s.reviewPrefs.enabled && s.logbookPrefs.enabled &&
-                !s.widgetSmartAdd && s.nlpConfig.enabled != before.nlpConfig.enabled
+                !s.widgetSmartAdd && s.nlpConfig.enabled != before.nlpConfig.enabled &&
+                !s.bottomBarSmartListColors
         }
 
         val after = r.vm.uiState.value

@@ -6,6 +6,7 @@ import com.rendyhd.vicu.auth.InMemoryTokenStorage
 import com.rendyhd.vicu.auth.RecordingAuthHooks
 import com.rendyhd.vicu.auth.authTestJson
 import com.rendyhd.vicu.auth.authTestJsonHeaders
+import com.rendyhd.vicu.data.local.FakeCollaborationDao
 import com.rendyhd.vicu.data.local.SyncCursorStore
 import com.rendyhd.vicu.data.local.TempIdGenerator
 import com.rendyhd.vicu.data.repository.TaskWriteGate
@@ -148,6 +149,8 @@ class SyncEngineHarness(
     val tempIds: TempIdGenerator = TempIdGenerator(InMemoryPreferencesDataStore()),
     /** The per-task write lock the engine shares with the repositories, when a test has them. */
     val writeGate: TaskWriteGate? = null,
+    /** Comments and signals the engine's collaboration replay writes to. */
+    val collaborationDao: FakeCollaborationDao = FakeCollaborationDao(),
     handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
 ) {
     private val requestLock = Mutex()
@@ -177,7 +180,7 @@ class SyncEngineHarness(
         storePosition = { taskId, position -> taskDao.updatePosition(taskId, position) },
     )
     private val enginePositioner = if (anchorCreates) positioner else null
-    private val storage = InMemoryTokenStorage()
+    val storage = InMemoryTokenStorage()
     val cursorStore = SyncCursorStore(InMemoryPreferencesDataStore())
     val refresher = TaskRefresher(
         taskDao = taskDao,
@@ -217,6 +220,7 @@ class SyncEngineHarness(
         positioner = enginePositioner,
         tempIds = tempIds,
         writeGate = writeGate,
+        collabSync = CollaborationSync(api, collaborationDao, pendingActionDao, storage),
     )
 
     val engine: SyncEngine = newEngine()

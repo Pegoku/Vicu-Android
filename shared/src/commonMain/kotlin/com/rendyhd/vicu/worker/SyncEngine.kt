@@ -8,6 +8,8 @@ import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.local.dao.ProjectDao
 import com.rendyhd.vicu.data.local.dao.normalizeQueuedPatchPayload
 import com.rendyhd.vicu.data.local.dao.TaskDao
+import com.rendyhd.vicu.data.local.dao.CollabQueue
+import com.rendyhd.vicu.domain.repository.CollaborationRepository
 import com.rendyhd.vicu.data.local.entity.PendingActionEntity
 import com.rendyhd.vicu.data.mapper.LabelMapper
 import com.rendyhd.vicu.data.mapper.ProjectMapper
@@ -89,6 +91,10 @@ class SyncEngine(
     private val writeGate: TaskWriteGate? = null,
     /** The done counts behind the drawer's progress rings; a sync may have changed them, so they are read again. */
     private val projectCounts: ProjectTaskCounts? = null,
+    /** Replays queued assignee and comment changes (cross-app semantics 9.6). */
+    private val collabSync: CollaborationSync? = null,
+    /** Reads project members and comment signals after the refresh. */
+    private val collaboration: CollaborationRepository? = null,
 ) {
     private val missing = MissingResourceCheck(api)
 
@@ -234,7 +240,12 @@ class SyncEngine(
             return
         }
         try {
-            processAction(action, run.tempIdMap)
+            if (!processAction(action, run.tempIdMap)) {
+                // It edits or deletes a comment whose create has not been sent yet.
+                pendingActionDao.updateStatus(action.id, "pending")
+                run.hasRetriableFailures = true
+                return
+            }
             pendingActionDao.updateStatus(action.id, "completed")
             Logger.d(TAG, "Action ${action.id} (${action.entityType}/${action.actionType}) completed")
         } catch (e: Exception) {
@@ -299,6 +310,8 @@ class SyncEngine(
             }
             action.entityType == "label" && action.actionType in LABEL_DEPENDENT_ACTIONS ->
                 action.entityId.takeIf(::unresolved)?.let { TempRef("label", it) }
+            action.entityType in CollabQueue.ENTITY_TYPES ->
+                action.entityId.takeIf(::unresolved)?.let { TempRef("task", it) }
             else -> null
         }
     }
@@ -353,6 +366,14 @@ class SyncEngine(
                 true
             }
             "label" -> resolveMissingForLabelAction(action, e, tempIdMap)
+            in CollabQueue.ENTITY_TYPES -> {
+                if (collabSync?.resolveMissing(action, e, tempIdMap) == true) return true
+                // The task itself is gone: nothing to assign or comment on.
+                val taskId = tempIdMap[action.entityId] ?: action.entityId
+                if (!missing.taskGone(taskId, e)) return false
+                dropGoneTask(taskId, "${action.entityType}/${action.actionType}")
+                true
+            }
             "project" -> {
                 if (action.actionType != "update" || !missing.projectGone(action.entityId, e)) return false
                 projectDao.deleteById(action.entityId)
@@ -440,13 +461,17 @@ class SyncEngine(
         Logger.w(TAG, "Task $taskId no longer exists on the server; dropped $actionType and the local row")
     }
 
-    private suspend fun processAction(action: PendingActionEntity, tempIdMap: MutableMap<Long, Long>) {
-        when (action.entityType) {
-            "task" -> processTaskAction(action, tempIdMap)
-            "label" -> processLabelAction(action, tempIdMap)
-            "project" -> processProjectAction(action)
+    /** Sends [action]; false when it has to wait for something still in the queue. */
+    private suspend fun processAction(action: PendingActionEntity, tempIdMap: MutableMap<Long, Long>): Boolean {
+        when {
+            action.entityType == "task" -> processTaskAction(action, tempIdMap)
+            action.entityType == "label" -> processLabelAction(action, tempIdMap)
+            action.entityType == "project" -> processProjectAction(action)
+            collabSync?.handles(action) == true ->
+                return collabSync.process(action, tempIdMap) { tempId, realId -> tempIds?.rememberRealId(tempId, realId) }
             else -> Logger.w(TAG, "Unknown entity type: ${action.entityType}")
         }
+        return true
     }
 
     /**
@@ -714,6 +739,8 @@ class SyncEngine(
                     pendingActionDao.remapEntity(a.id, realId, a.payload, "pending")
             }
         }
+        // Assignee and comment changes of a task created offline, and its comments and signals.
+        collabSync?.remapTask(tempId, realId)
     }
 
     /** A queued subtask create that names [tempId] as its parent now names [realId]. */
@@ -763,6 +790,8 @@ class SyncEngine(
             val outcome = taskRefresher.refresh()
             labelRefresher.refresh()
             projectRefresher.refresh()
+            // Members and comment signals: a failure here does not fail the refresh.
+            collaboration?.refresh()
             outcome
         } catch (e: CancellationException) {
             throw e

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rendyhd.vicu.auth.AuthManager
 import com.rendyhd.vicu.domain.model.CustomList
+import com.rendyhd.vicu.domain.model.CustomListFilter
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Project
 import com.rendyhd.vicu.domain.model.Task
@@ -18,8 +19,10 @@ import com.rendyhd.vicu.ui.navigation.NavigationTicker
 import com.rendyhd.vicu.ui.screens.shared.CompletionHold
 import com.rendyhd.vicu.ui.screens.shared.CompletionToast
 import com.rendyhd.vicu.ui.screens.shared.NoCompletionToast
+import com.rendyhd.vicu.domain.repository.CollaborationRepository
 import com.rendyhd.vicu.domain.repository.CustomListRepository
 import com.rendyhd.vicu.domain.repository.customListSource
+import com.rendyhd.vicu.util.CustomListContext
 import com.rendyhd.vicu.util.CustomListFilterBuilder
 import com.rendyhd.vicu.util.DayClock
 import com.rendyhd.vicu.util.NetworkResult
@@ -58,6 +61,8 @@ class CustomListViewModel(
     private val authManager: AuthManager,
     private val dayClock: DayClock,
     private val refresher: ScreenRefresher,
+    /** Who you are, the shared projects and the comment signals, for the conditions of section 3.3. */
+    private val collaboration: CollaborationRepository? = null,
     navigationTicker: NavigationTicker = NavigationTicker(),
     completionToast: CompletionToast = NoCompletionToast,
 ) : ViewModel() {
@@ -75,6 +80,12 @@ class CustomListViewModel(
 
     val labels: StateFlow<List<Label>> = labelRepository.getAll()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    private val collabContext = collaboration
+        ?.let { repo -> combine(repo.state, repo.signals) { state, signals -> CustomListContext.of(state, signals) } }
+        ?: flowOf(CustomListContext.NONE)
+
+    private val readHere = ReadKeeper()
 
     init {
         viewModelScope.launch {
@@ -95,10 +106,11 @@ class CustomListViewModel(
                         val source = taskRepository.customListSource(customList.filter)
                         // The windows follow the local day, so the list is re-evaluated at midnight and
                         // when the time zone changes.
-                        combine(source, projectRepository.getAll(), completions.state, dayClock.day) { tasks, projects, _, day ->
+                        combine(source, projectRepository.getAll(), completions.state, dayClock.day, collabContext) { tasks, projects, _, day, context ->
                             val activeIds = projects.mapTo(mutableSetOf()) { it.id }
+                            val listContext = readHere.contextFor(context, customList.filter.comments)
                             customList to completions.merge(
-                                CustomListFilterBuilder.visibleTasks(tasks, customList.filter, day.date, day.zone, activeIds),
+                                CustomListFilterBuilder.visibleTasks(tasks, customList.filter, day.date, day.zone, activeIds, listContext),
                             )
                         }
                     }
@@ -117,9 +129,9 @@ class CustomListViewModel(
                 .distinctUntilChanged()
                 .collect { (filter, day) ->
                     if (filter != null) {
-                        val result = taskRepository.refreshAll(
-                            CustomListFilterBuilder.buildQueryParams(filter, day.date, day.zone),
-                        )
+                        val params = CustomListFilterBuilder.buildQueryParams(filter, day.date, day.zone)
+                        val result = taskRepository.refreshAll(params)
+                        refreshDoneSignals(filter, params)
                         _uiState.update { it.copy(error = result.refreshErrorToShow(manual = false) ?: it.error) }
                     }
                 }
@@ -141,12 +153,21 @@ class CustomListViewModel(
             val listTasks: (suspend () -> NetworkResult<Unit>)? = customList?.let { list ->
                 {
                     val day = dayClock.day.value
-                    taskRepository.refreshAll(CustomListFilterBuilder.buildQueryParams(list.filter, day.date, day.zone))
+                    val params = CustomListFilterBuilder.buildQueryParams(list.filter, day.date, day.zone)
+                    taskRepository.refreshAll(params).also { refreshDoneSignals(list.filter, params) }
                 }
             }
             val result = refresher.refresh(manual = showSpinner, tasks = listTasks)
             _uiState.update { it.copy(isRefreshing = false, error = result.refreshErrorToShow(showSpinner) ?: it.error) }
         }
+    }
+
+    /**
+     * The comment signals of done tasks, which the regular signal refresh (open tasks only) does
+     * not read, for a list that shows done tasks and looks at comments.
+     */
+    private suspend fun refreshDoneSignals(filter: CustomListFilter, params: Map<String, String>) {
+        if (filter.includeDone && filter.needsCommentSignals) collaboration?.refreshSignalsFor(params["filter"].orEmpty())
     }
 
     fun toggleDone(task: Task) {

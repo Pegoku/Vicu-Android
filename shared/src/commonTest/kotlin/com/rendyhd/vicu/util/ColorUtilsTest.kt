@@ -48,4 +48,9 @@ class ColorUtilsTest {
         PRESET_COLORS.forEach { assertNotNull(parseHexColor(it), it) }
         assertEquals(PRESET_COLORS.size, PRESET_COLORS.toSet().size, "no duplicates")
     }
+
+    @Test
+    fun `every preset has a name for a screen reader`() {
+        assertEquals(PRESET_COLORS.toSet(), PRESET_COLOR_NAMES.keys)
+    }
 }

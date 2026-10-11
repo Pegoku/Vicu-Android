@@ -6,6 +6,7 @@ import com.rendyhd.vicu.data.remote.api.CreateTaskDto
 import com.rendyhd.vicu.data.remote.api.LabelDto
 import com.rendyhd.vicu.data.remote.api.TaskDto
 import com.rendyhd.vicu.data.remote.api.TaskReminderDto
+import com.rendyhd.vicu.data.remote.api.UserDto
 import com.rendyhd.vicu.domain.model.Attachment
 import com.rendyhd.vicu.domain.model.Label
 import com.rendyhd.vicu.domain.model.Task
@@ -63,6 +64,7 @@ class TaskMapper(private val json: Json) {
             relatedTasks ?: emptyMap()
         ),
         isFavorite = isFavorite,
+        assigneesJson = json.encodeToString(ListSerializer(UserDto.serializer()), assignees ?: emptyList()),
     )
 
     fun TaskEntity.toDomain(): Task {
@@ -93,6 +95,10 @@ class TaskMapper(private val json: Json) {
                 relatedTasksJson
             )
         } catch (_: Exception) { emptyMap() }
+
+        val assigneeDtos: List<UserDto> = try {
+            json.decodeFromString(ListSerializer(UserDto.serializer()), assigneesJson)
+        } catch (_: Exception) { emptyList() }
 
         return Task(
             id = id,
@@ -138,8 +144,17 @@ class TaskMapper(private val json: Json) {
                 }
             },
             isFavorite = isFavorite,
+            assignees = assigneeDtos.map { User(id = it.id, username = it.username, name = it.name) },
         )
     }
+
+    /** This row with [assignees] as its assignees (an optimistic assign or unassign). */
+    fun TaskEntity.withAssignees(assignees: List<User>): TaskEntity = copy(
+        assigneesJson = json.encodeToString(
+            ListSerializer(UserDto.serializer()),
+            assignees.map { UserDto(id = it.id, username = it.username, name = it.name) },
+        ),
+    )
 
     /**
      * Applies the editable fields of [edited] onto this cached row and keeps everything else:

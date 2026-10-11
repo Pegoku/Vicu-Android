@@ -1,12 +1,36 @@
 package com.rendyhd.vicu.util
 
+import com.rendyhd.vicu.domain.model.CollabState
 import com.rendyhd.vicu.domain.model.CustomListFilter
 import com.rendyhd.vicu.domain.model.Task
+import com.rendyhd.vicu.domain.model.TaskSignal
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
 import kotlinx.datetime.plus
+
+/**
+ * What the collaboration conditions of a custom list read besides the task (cross-app semantics
+ * 3.3): who you are, which projects are shared, and the comment counts and unread marks by task
+ * id. [NONE] shares nothing, so those conditions match nothing.
+ */
+data class CustomListContext(
+    val me: Long? = null,
+    val sharedProjectIds: Set<Long> = emptySet(),
+    val signals: Map<Long, TaskSignal> = emptyMap(),
+) {
+    companion object {
+        val NONE = CustomListContext()
+
+        fun of(state: CollabState, signals: Map<Long, TaskSignal>): CustomListContext = CustomListContext(
+            me = state.me,
+            sharedProjectIds = state.projects.filterValues { it.shared }.keys,
+            signals = signals,
+        )
+    }
+}
 
 /**
  * The one custom-list evaluator (docs/cross-app-semantics-v1.md, sections 2 and 3). Desktop runs
@@ -19,6 +43,8 @@ import kotlinx.datetime.plus
  *   boundaries. The exact rule is always [matches], applied client-side.
  * - Every condition is evaluated on the full task set. A caller hides nested subtasks after
  *   filtering, so a matching subtask shows even when its parent does not.
+ * - The assigned, comments, shared and changed conditions (section 3.3) also read a
+ *   [CustomListContext]; the fixture's `customListActivity` block covers them.
  */
 object CustomListFilterBuilder {
 
@@ -48,8 +74,17 @@ object CustomListFilterBuilder {
             else -> true // "all", or a window from a newer app
         }
 
-    /** Whether [task] belongs on the list described by [filter] on the local date [today]. */
-    fun matches(task: Task, filter: CustomListFilter, today: LocalDate, zone: TimeZone): Boolean {
+    /**
+     * Whether [task] belongs on the list described by [filter] on the local date [today].
+     * [context] is read by the collaboration conditions only.
+     */
+    fun matches(
+        task: Task,
+        filter: CustomListFilter,
+        today: LocalDate,
+        zone: TimeZone,
+        context: CustomListContext = CustomListContext.NONE,
+    ): Boolean {
         if (!filter.includeDone && task.done) return false
 
         val includeOverdue = filter.includesOverdue
@@ -69,6 +104,40 @@ object CustomListFilterBuilder {
 
         if (filter.labelIds.isNotEmpty() && task.labels.none { it.id in filter.labelIds }) return false
 
+        return matchesActivity(task, filter, today, zone, context)
+    }
+
+    /** The assigned, comments, shared and changed conditions (section 3.3). */
+    private fun matchesActivity(
+        task: Task,
+        filter: CustomListFilter,
+        today: LocalDate,
+        zone: TimeZone,
+        context: CustomListContext,
+    ): Boolean {
+        val shared = task.projectId in context.sharedProjectIds
+        if (filter.sharedOnly && !shared) return false
+
+        val me = context.me
+        val assigned = task.assignees.any { it.id == me }
+        when (filter.assigned) {
+            "me" -> if (!shared || me == null || !assigned) return false
+            "others" -> if (!shared || me == null || task.assignees.isEmpty() || assigned) return false
+            "nobody" -> if (!shared || task.assignees.isNotEmpty()) return false
+        }
+
+        val signal = context.signals[task.id]
+        when (filter.comments) {
+            "unread" -> if (!shared || signal?.isUnread != true) return false
+            "any" -> if (!shared || (signal?.commentCount ?: 0) <= 0) return false
+        }
+
+        val days = filter.changedDays
+        if (days != null) {
+            val changed = DueDates.localDateOf(task.updated, zone) ?: return false
+            if (changed < today.minus(days - 1, DateTimeUnit.DAY)) return false
+        }
+
         return true
     }
 
@@ -81,7 +150,8 @@ object CustomListFilterBuilder {
         filter: CustomListFilter,
         today: LocalDate,
         zone: TimeZone,
-    ): List<Task> = tasks.filter { matches(it, filter, today, zone) }
+        context: CustomListContext = CustomListContext.NONE,
+    ): List<Task> = tasks.filter { matches(it, filter, today, zone, context) }
 
     /**
      * The rows a custom list shows, from the full task set [tasks]: the list's conditions first,
@@ -95,8 +165,9 @@ object CustomListFilterBuilder {
         today: LocalDate,
         zone: TimeZone,
         activeProjectIds: Set<Long>,
+        context: CustomListContext = CustomListContext.NONE,
     ): List<Task> = sortTasks(
-        applyClientSideFilters(tasks, filter, today, zone)
+        applyClientSideFilters(tasks, filter, today, zone, context)
             .filter { it.projectId in activeProjectIds }
             .withoutNestedSubtasks(hideChildrenOfCompletedParents = false),
         filter.sortBy,
@@ -135,7 +206,9 @@ object CustomListFilterBuilder {
      * Builds a Vikunja API filter string for [filter] on [today] in [zone]. It never excludes a
      * task [matches] would accept: a project clause is only sent for include mode (and widened
      * with the today window for "today from all projects"), and priority and labels are left to
-     * the client. The server may send more than the list shows; [applyClientSideFilters] decides.
+     * the client, like the assigned and comments conditions (they depend on which projects are
+     * shared). "Changed" is `updated >= '<start of the first local day>'`, which is exact. The
+     * server may send more than the list shows; [applyClientSideFilters] decides.
      */
     fun buildFilterString(filter: CustomListFilter, today: LocalDate, zone: TimeZone): String {
         val parts = mutableListOf<String>()
@@ -157,6 +230,10 @@ object CustomListFilterBuilder {
         }
 
         dateWindowClause(filter.dueDateFilter, includeOverdue, today, zone)?.let { parts.add(it) }
+
+        filter.changedDays?.let { days ->
+            parts.add("updated >= '${DueDates.startOfDay(today.minus(days - 1, DateTimeUnit.DAY), zone)}'")
+        }
 
         return parts.joinToString(" && ")
     }

@@ -104,6 +104,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.rendyhd.vicu.domain.model.Attachment
+import com.rendyhd.vicu.domain.model.TaskSignal
+import com.rendyhd.vicu.domain.model.toCollabUser
+import com.rendyhd.vicu.ui.components.collab.AssignSheet
+import com.rendyhd.vicu.ui.components.collab.AvatarStack
+import com.rendyhd.vicu.ui.components.collab.CommentIcon
+import com.rendyhd.vicu.ui.components.collab.LocalCollab
+import com.rendyhd.vicu.util.Collaboration
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material3.LocalContentColor
 import com.rendyhd.vicu.ui.components.picker.LabelPickerDialog
 import com.rendyhd.vicu.ui.components.picker.PriorityPickerDialog
 import com.rendyhd.vicu.ui.components.picker.ProjectPickerDialog
@@ -149,6 +158,7 @@ fun TaskDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     var showProjectPicker by remember { mutableStateOf(false) }
+    var showAssignSheet by remember { mutableStateOf(false) }
     var showLabelPicker by remember { mutableStateOf(false) }
     var showReminderPicker by remember { mutableStateOf(false) }
     val notificationPermission: NotificationPermissionCoordinator = koinInject()
@@ -442,8 +452,9 @@ fun TaskDetailScreen(
             }
 
             // One row of property chips, in the order of the desktop card bar: date, priority,
-            // labels, checklist, reminders, repeat, project, attachments, More. A property that is
-            // not set is a quiet "+ Name" that opens the same picker.
+            // labels, checklist, reminders, repeat, project, assign, attachments, comments, More
+            // (design-system-v1.md section 4.1; assign and comments only on shared projects). A
+            // property that is not set is a quiet "+ Name" that opens the same picker.
             item(key = "task_actions") {
                 val clockDay = LocalClockDay.current
                 val dateFormat = LocalDateFormat.current
@@ -524,6 +535,28 @@ fun TaskDetailScreen(
                         description = "Project: $projectName",
                         onClick = { showProjectPicker = true },
                     )
+                    val collab = LocalCollab.current
+                    val access = collab.access(task.projectId)
+                    if (access.shared) {
+                        val assignees = collab.assignees(task)
+                        // With read-only access the chip shows the assignees and does not open.
+                        PropertyChip(
+                            set = assignees.isNotEmpty(),
+                            text = "Assign",
+                            description = Collaboration.assignChipLabel(assignees.map { it.toCollabUser() }, collab.state.me),
+                            onClick = { showAssignSheet = true },
+                            enabled = access.canWrite,
+                        ) {
+                            AvatarStack(people = assignees, size = 20.dp, ringColor = MaterialTheme.colorScheme.surface, max = 3)
+                            Text(
+                                text = collab.nameList(assignees),
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 180.dp),
+                            )
+                        }
+                    }
                     PropertyChip(
                         set = state.attachments.isNotEmpty(),
                         text = if (state.attachments.isEmpty()) "" else state.attachments.size.toString(),
@@ -535,6 +568,29 @@ fun TaskDetailScreen(
                         onClick = filePickerLauncher,
                         icon = Icons.Default.AttachFile,
                     )
+                    if (access.shared) {
+                        val signal = collab.signals[task.id] ?: TaskSignal()
+                        val count = signal.commentCount
+                        PropertyChip(
+                            set = count > 0,
+                            text = "",
+                            description = when {
+                                count == 0 -> "Comments"
+                                signal.isUnread -> "Comments, $count, new"
+                                else -> "Comments, $count"
+                            },
+                            onClick = { collab.openComments(task.id) },
+                            icon = if (count == 0) Icons.Outlined.ChatBubbleOutline else null,
+                        ) {
+                            CommentIcon(
+                                unread = signal.isUnread,
+                                iconSize = 18.dp,
+                                tint = LocalContentColor.current,
+                                ringColor = MaterialTheme.colorScheme.surface,
+                            )
+                            Text(text = count.toString(), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        }
+                    }
                     Box {
                         PropertyChip(
                             set = false,
@@ -881,6 +937,16 @@ fun TaskDetailScreen(
         )
     }
 
+    if (showAssignSheet) {
+        state.task?.let { current ->
+            AssignSheet(
+                task = current,
+                projectTitle = state.allProjects.find { it.id == current.projectId }?.title.orEmpty(),
+                onDismiss = { showAssignSheet = false },
+            )
+        }
+    }
+
     if (showProjectPicker) {
         ProjectPickerDialog(
             projects = state.allProjects,
@@ -972,6 +1038,7 @@ private fun PropertyChip(
     modifier: Modifier = Modifier,
     emphasis: Boolean = false,
     icon: ImageVector? = null,
+    enabled: Boolean = true,
     content: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -985,6 +1052,7 @@ private fun PropertyChip(
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides MIN_TOUCH_TARGET) {
         Surface(
             onClick = onClick,
+            enabled = enabled,
             modifier = modifier
                 .minimumInteractiveComponentSize()
                 .semantics { contentDescription = description },

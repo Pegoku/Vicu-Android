@@ -29,6 +29,7 @@ import com.rendyhd.vicu.util.parser.ParserConfig
 import com.rendyhd.vicu.util.parser.SyntaxMode
 import com.rendyhd.vicu.data.local.dao.PendingActionDao
 import com.rendyhd.vicu.data.remote.api.VikunjaApiService
+import com.rendyhd.vicu.domain.model.BottomBarConfig
 import com.rendyhd.vicu.domain.model.BottomBarSlot
 import com.rendyhd.vicu.domain.model.CustomList
 import com.rendyhd.vicu.domain.model.CustomListSyncStatus
@@ -92,6 +93,7 @@ data class SettingsUiState(
     val isOnline: Boolean = true,
     // Bottom Bar
     val bottomBarSlots: List<BottomBarSlot> = BottomBarSlot.DEFAULT_SLOTS,
+    val bottomBarSmartListColors: Boolean = true,
     // Widget
     val widgetSmartAdd: Boolean = true,
     val widgetContextNav: Boolean = true,
@@ -132,7 +134,7 @@ private data class AccountGroup(
     val userInfo: UserInfo,
     val vikunjaUrl: String,
     val inboxProjectId: Long?,
-    val bottomBarSlots: List<BottomBarSlot>,
+    val bottomBar: BottomBarConfig,
     /** (error, success) */
     val messages: Pair<String?, String?>,
 )
@@ -212,10 +214,10 @@ class SettingsViewModel(
         _userInfo,
         _vikunjaUrl,
         _inboxProjectId,
-        bottomBarPrefsStore.slots,
+        bottomBarPrefsStore.config,
         _messages,
-    ) { userInfo, url, inboxId, bottomBarSlots, messages ->
-        AccountGroup(userInfo, url, inboxId, bottomBarSlots, messages)
+    ) { userInfo, url, inboxId, bottomBar, messages ->
+        AccountGroup(userInfo, url, inboxId, bottomBar, messages)
     }
 
     private val prefs = combine(
@@ -257,7 +259,8 @@ class SettingsViewModel(
             pendingActionCount = s.pendingCount,
             failedActionCount = s.failedCount,
             isOnline = s.isOnline,
-            bottomBarSlots = a.bottomBarSlots,
+            bottomBarSlots = a.bottomBar.slots,
+            bottomBarSmartListColors = a.bottomBar.smartListColors,
             widgetSmartAdd = p.smartAdd,
             widgetContextNav = p.contextNav,
             reviewPrefs = p.reviewPrefs,
@@ -529,9 +532,13 @@ class SettingsViewModel(
         }
     }
 
+    fun setBottomBarSmartListColors(enabled: Boolean) {
+        viewModelScope.launch { bottomBarPrefsStore.setSmartListColors(enabled) }
+    }
+
     fun resetBottomBar() {
         viewModelScope.launch {
-            bottomBarPrefsStore.saveSlots(BottomBarSlot.DEFAULT_SLOTS)
+            bottomBarPrefsStore.reset()
             _messages.update { null to "Bottom bar reset to defaults" }
         }
     }

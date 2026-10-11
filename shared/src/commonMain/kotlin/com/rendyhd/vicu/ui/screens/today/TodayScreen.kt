@@ -50,7 +50,7 @@ import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
 import com.rendyhd.vicu.ui.components.shared.LocalClockDay
 import com.rendyhd.vicu.ui.components.shared.LocalDateFormat
 import com.rendyhd.vicu.ui.components.shared.LocalToday
-import com.rendyhd.vicu.ui.components.shared.VicuFab
+import com.rendyhd.vicu.ui.components.shared.ScreenFab
 import com.rendyhd.vicu.ui.components.shared.VicuTopAppBar
 import com.rendyhd.vicu.ui.components.shared.rememberVicuTopBarScroll
 import com.rendyhd.vicu.ui.components.task.SwipeableTaskItem
@@ -131,7 +131,7 @@ fun TodayScreen(
         floatingActionButton = {
             if (!selectionActive) {
                 val day = LocalClockDay.current
-                VicuFab(onClick = { onShowTaskEntry(null, DueDates.today(day.date, day.zone).toString()) }, expanded = !listState.canScrollBackward)
+                ScreenFab(onClick = { onShowTaskEntry(null, DueDates.today(day.date, day.zone).toString()) }, expanded = !listState.canScrollBackward)
             }
         },
         floatingActionButtonPosition = if (LocalFabAlignStart.current) FabPosition.Start else FabPosition.End,

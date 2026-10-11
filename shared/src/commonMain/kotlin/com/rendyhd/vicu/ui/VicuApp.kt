@@ -5,9 +5,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
@@ -38,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalAccessibilityManager
@@ -65,7 +70,10 @@ import com.rendyhd.vicu.domain.model.Task
 import com.rendyhd.vicu.permission.NotificationPermissionCoordinator
 import com.rendyhd.vicu.ui.components.picker.WhenSheet
 import com.rendyhd.vicu.ui.components.settings.NotificationPermissionSheet
+import com.rendyhd.vicu.ui.components.shared.AppFab
+import com.rendyhd.vicu.ui.components.shared.AppFabHost
 import com.rendyhd.vicu.ui.components.shared.CustomListDialog
+import com.rendyhd.vicu.ui.components.shared.LocalAppFabHost
 import com.rendyhd.vicu.ui.components.shared.ProjectEditDialog
 import com.rendyhd.vicu.ui.components.shared.IconRegistry
 import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
@@ -109,6 +117,11 @@ import com.rendyhd.vicu.ui.navigation.routeKey
 import com.rendyhd.vicu.ui.navigation.startDestinationFor
 import com.rendyhd.vicu.ui.navigation.toRoute
 import com.rendyhd.vicu.ui.screens.taskdetail.EditorBackState
+import com.rendyhd.vicu.ui.components.collab.CollabUi
+import com.rendyhd.vicu.ui.components.collab.CollabViewModel
+import com.rendyhd.vicu.ui.components.collab.LocalCollab
+import com.rendyhd.vicu.ui.screens.comments.TaskCommentsScreen
+import com.rendyhd.vicu.ui.screens.comments.TaskCommentsViewModel
 import com.rendyhd.vicu.ui.screens.taskdetail.EditorOverlay
 import com.rendyhd.vicu.ui.screens.taskdetail.TaskDetailScreen
 import com.rendyhd.vicu.ui.screens.taskdetail.TaskDetailViewModel
@@ -116,6 +129,7 @@ import com.rendyhd.vicu.util.AppMessages
 import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.DateDisplayFormat
 import com.rendyhd.vicu.util.DayClock
+import com.rendyhd.vicu.util.parseHexColor
 import com.rendyhd.vicu.util.postIfRefused
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -131,8 +145,10 @@ internal data class BottomNavItem(
     val route: Any,
     val routeName: String,
     val isParameterized: Boolean = false,
-    /** Set for a smart list: its icon is drawn in the identity colour. */
+    /** Set for a smart list while smart list colours are on: its icon is drawn in the identity colour. */
     val identity: SmartListIdentity? = null,
+    /** The colour the user gave a project or custom list slot; null draws the icon in the bar's content colour. */
+    val color: Color? = null,
 )
 
 /** Carries the task editor's unsaved draft through process death (see [TaskDetailViewModel.currentDraftJson]). */
@@ -142,29 +158,34 @@ private class TaskDetailDraftHolder(val restored: String?)
  * The bottom bar: the Inbox first, always, then the slots the user chose. A slot for something
  * that is gone (a deleted project or list) is left out, and so is a project slot for the Inbox
  * ([inboxProjectId]): the bar already starts with it.
+ *
+ * The smart lists wear their identity colours unless [smartListColors] is off; a project or
+ * custom list slot wears the colour chosen for it, if any.
  */
 internal fun resolveBottomBarItems(
     slots: List<BottomBarSlot>,
     allProjects: List<Project>,
     customLists: List<CustomList>,
     inboxProjectId: Long,
+    smartListColors: Boolean = true,
 ): List<BottomNavItem> {
+    fun identity(of: SmartListIdentity) = of.takeIf { smartListColors }
     val items = mutableListOf(
-        BottomNavItem("Inbox", SmartListIdentity.INBOX.icon, InboxRoute, "InboxRoute", identity = SmartListIdentity.INBOX),
+        BottomNavItem("Inbox", SmartListIdentity.INBOX.icon, InboxRoute, "InboxRoute", identity = identity(SmartListIdentity.INBOX)),
     )
     for (slot in slots) {
         val item = when (slot.type) {
             BottomBarSlotType.TODAY -> BottomNavItem(
                 "Today", IconRegistry.resolveIcon(slot), TodayRoute, "TodayRoute",
-                identity = SmartListIdentity.TODAY,
+                identity = identity(SmartListIdentity.TODAY),
             )
             BottomBarSlotType.UPCOMING -> BottomNavItem(
                 "Upcoming", IconRegistry.resolveIcon(slot), UpcomingRoute, "UpcomingRoute",
-                identity = SmartListIdentity.UPCOMING,
+                identity = identity(SmartListIdentity.UPCOMING),
             )
             BottomBarSlotType.ANYTIME -> BottomNavItem(
                 "Anytime", IconRegistry.resolveIcon(slot), AnytimeRoute, "AnytimeRoute",
-                identity = SmartListIdentity.ANYTIME,
+                identity = identity(SmartListIdentity.ANYTIME),
             )
             BottomBarSlotType.PROJECT -> {
                 val projectId = slot.referenceId.toLongOrNull() ?: continue
@@ -174,6 +195,7 @@ internal fun resolveBottomBarItems(
                     project.title, IconRegistry.resolveIcon(slot),
                     ProjectRoute(projectId), "ProjectRoute/$projectId",
                     isParameterized = true,
+                    color = parseHexColor(slot.colorHex),
                 )
             }
             BottomBarSlotType.CUSTOM_LIST -> {
@@ -182,6 +204,7 @@ internal fun resolveBottomBarItems(
                     list.name, IconRegistry.resolveIcon(slot),
                     CustomListRoute(slot.referenceId), "CustomListRoute/${slot.referenceId}",
                     isParameterized = true,
+                    color = parseHexColor(slot.colorHex),
                 )
             }
         }
@@ -227,6 +250,8 @@ fun VicuApp(
     var showTaskDetailSheet by rememberSaveable { mutableStateOf(false) }
     var taskDetailTaskId by rememberSaveable { mutableLongStateOf(0L) }
     var showNewListDialog by rememberSaveable { mutableStateOf(false) }
+    // The task whose Comments screen is open over everything (0 when none); saved like the editor.
+    var commentsTaskId by rememberSaveable { mutableLongStateOf(0L) }
     var showNewProjectDialog by rememberSaveable { mutableStateOf(false) }
     // Saved with the instance state: a rotation reopens the sheet with the shared text and files.
     var pendingSharedContent by rememberSaveable(stateSaver = SharedContentSaver) {
@@ -471,8 +496,25 @@ fun VicuApp(
 
     val drawerViewModel: DrawerViewModel = koinViewModel()
     val drawerUiState by drawerViewModel.uiState.collectAsStateWithLifecycle()
+
+    // Collaboration (assignees and comments) for the rows, the editor and the Comments screen.
+    val collabViewModel: CollabViewModel = koinViewModel()
+    val collabState by collabViewModel.state.collectAsStateWithLifecycle()
+    val collabSignals by collabViewModel.signals.collectAsStateWithLifecycle()
+    val commentsViewModel: TaskCommentsViewModel = koinViewModel()
+    val collabUi = remember(collabState, collabSignals) {
+        CollabUi(
+            state = collabState,
+            signals = collabSignals,
+            openComments = { taskId -> commentsTaskId = taskId },
+            setAssigned = collabViewModel::setAssigned,
+            memberPermissions = collabViewModel::memberPermissions,
+        )
+    }
     val projectProgress by drawerViewModel.projectProgress.collectAsStateWithLifecycle()
     val fabAlignStart by drawerViewModel.fabAlignStart.collectAsStateWithLifecycle()
+    // The screens' + buttons, drawn as one by AppFab.
+    val fabHost = remember { AppFabHost() }
     val subtaskDisplayMode by drawerViewModel.subtaskDisplayMode.collectAsStateWithLifecycle()
 
     // What every surface of the app is composed under, the sheets and dialogs as much as the
@@ -485,11 +527,13 @@ fun VicuApp(
         LocalIs24Hour provides is24Hour,
         LocalDateFormat provides dateFormat,
         LocalTaskRowActions provides taskRowActions,
+        LocalCollab provides collabUi,
     )
 
     // Build dynamic bottom bar items from config
     val bottomNavItems = remember(
         drawerUiState.bottomBarSlots,
+        drawerUiState.bottomBarSmartListColors,
         drawerUiState.allProjects,
         drawerUiState.customLists,
         drawerUiState.inboxProjectId,
@@ -499,6 +543,7 @@ fun VicuApp(
             drawerUiState.allProjects,
             drawerUiState.customLists,
             drawerUiState.inboxProjectId,
+            smartListColors = drawerUiState.bottomBarSmartListColors,
         )
     }
 
@@ -563,8 +608,10 @@ fun VicuApp(
                                         item.icon,
                                         contentDescription = null,
                                         modifier = Modifier.scale(scale),
-                                        // A smart list's icon is drawn in its identity colour (design-system-v1, section 8).
+                                        // A smart list's icon is drawn in its identity colour (design-system-v1,
+                                        // section 8), a project or list slot in the colour chosen for it.
                                         tint = item.identity?.color(LocalVicuColors.current.identity)
+                                            ?: item.color
                                             ?: LocalContentColor.current,
                                     )
                                 },
@@ -603,20 +650,32 @@ fun VicuApp(
                         onDiscard = syncStateViewModel::discardFailed,
                     )
                 }
-                val navHostModifier = Modifier.weight(1f)
-                CompositionLocalProvider(*appLocals) {
-                    AppNavHost(
-                        navController = navController,
-                        startDestination = startDestination,
-                        onOpenDrawer = { scope.launch { drawerState.open() } },
-                        onNavigateToSearch = {
-                            navController.navigate(SearchRoute) {
-                                launchSingleTop = true
-                            }
-                        },
-                        onTaskClick = onTaskClick,
-                        onShowTaskEntry = onShowTaskEntry,
-                        modifier = navHostModifier,
+                Box(modifier = Modifier.weight(1f)) {
+                    CompositionLocalProvider(*appLocals, LocalAppFabHost provides fabHost) {
+                        AppNavHost(
+                            navController = navController,
+                            startDestination = startDestination,
+                            onOpenDrawer = { scope.launch { drawerState.open() } },
+                            onNavigateToSearch = {
+                                navController.navigate(SearchRoute) {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onTaskClick = onTaskClick,
+                            onShowTaskEntry = onShowTaskEntry,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    // The + button of the screen on top, over the screens rather than in them, so a
+                    // change of screen does not fade it. Placed where the screens' Scaffolds put it:
+                    // 16 dp from the corner, above the system bar inset they leave free.
+                    AppFab(
+                        host = fabHost,
+                        screen = navBackStackEntry?.id,
+                        modifier = Modifier
+                            .align(if (fabAlignStart) Alignment.BottomStart else Alignment.BottomEnd)
+                            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
+                            .padding(16.dp),
                     )
                 }
             }
@@ -659,6 +718,23 @@ fun VicuApp(
                 viewModel = taskDetailViewModel,
                 onOpenTask = onTaskClick,
                 backState = editorBackState,
+                // While the comments are open over the editor, back closes them first.
+                backEnabled = backEnabled && commentsTaskId == 0L,
+            )
+        }
+
+        // The Comments screen of a task, over the editor or the list it was opened from.
+        val commentsBackState = remember { EditorBackState() }
+        EditorOverlay(
+            taskId = commentsTaskId.takeIf { it != 0L && authState == AuthState.Authenticated },
+            backState = commentsBackState,
+            stayOpen = { false },
+        ) { taskId, backEnabled ->
+            TaskCommentsScreen(
+                taskId = taskId,
+                onClose = { commentsTaskId = 0L },
+                viewModel = commentsViewModel,
+                backState = commentsBackState,
                 backEnabled = backEnabled,
             )
         }
@@ -670,7 +746,7 @@ fun VicuApp(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = if (showBottomBar && !taskDetailVisible) 80.dp else 0.dp),
+                    .padding(bottom = if (showBottomBar && !taskDetailVisible && commentsTaskId == 0L) 80.dp else 0.dp),
             )
         }
 

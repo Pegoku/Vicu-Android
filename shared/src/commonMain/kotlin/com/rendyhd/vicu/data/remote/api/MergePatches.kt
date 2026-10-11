@@ -29,6 +29,11 @@ object MergePatches {
         "position",
         "kanban_position",
         "max_permission",
+        // Collaboration (cross-app semantics 9): assignees have their own endpoints; the rest is read only.
+        "assignees",
+        "comment_count",
+        "is_unread",
+        "subscription",
     )
 
     fun task(previous: Task?, current: Task): JsonObject = buildJsonObject {

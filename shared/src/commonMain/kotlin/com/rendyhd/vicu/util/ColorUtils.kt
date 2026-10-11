@@ -9,6 +9,20 @@ val PRESET_COLORS = listOf(
     "#7a6ff0", "#aa62e3",
 )
 
+/** What a screen reader calls each of [PRESET_COLORS]. */
+val PRESET_COLOR_NAMES: Map<String, String> = mapOf(
+    "#e8384f" to "Red",
+    "#fd612c" to "Orange",
+    "#fd9a00" to "Amber",
+    "#eec300" to "Yellow",
+    "#a4cf30" to "Lime",
+    "#37c5ab" to "Teal",
+    "#20aaea" to "Sky blue",
+    "#4186e0" to "Blue",
+    "#7a6ff0" to "Indigo",
+    "#aa62e3" to "Purple",
+)
+
 /**
  * The ARGB value of a hex colour: "RRGGBB" (as Vikunja stores it), "AARRGGBB", either with a
  * leading `#`. Null for anything else; callers apply their own fallback colour.

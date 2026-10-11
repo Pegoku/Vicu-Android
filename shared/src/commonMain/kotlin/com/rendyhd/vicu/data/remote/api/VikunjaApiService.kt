@@ -22,12 +22,15 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLPathPart
 import com.rendyhd.vicu.util.Constants
 import com.rendyhd.vicu.util.contentDispositionFileParameter
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 data class KtorResponse<T>(
@@ -48,6 +51,12 @@ class VikunjaApiService(
     companion object {
         private const val DEFAULT_PAGE_SIZE = 100
         private const val SUBTASK_EXPANSION = "subtasks"
+        /** Comments come 50 to a page, newest first (cross-app semantics 9.5). */
+        const val COMMENT_PAGE_SIZE = 50
+        /** Vikunja error codes the collaboration calls treat as done or as gone. */
+        const val ERROR_ALREADY_ASSIGNED = 4021L
+        const val ERROR_ALREADY_SUBSCRIBED = 12002L
+        const val ERROR_COMMENT_DOES_NOT_EXIST = 4015L
         private val MERGE_PATCH = ContentType.parse("application/merge-patch+json")
 
         /**
@@ -75,9 +84,15 @@ class VikunjaApiService(
     suspend fun getTasksPage(
         filters: Map<String, String> = emptyMap(),
         expandSubtasks: Boolean = true,
+        collabSignals: Boolean = false,
     ): PaginatedResponse<TaskDto> =
         client.get("tasks") {
             if (expandSubtasks) parameter("expand", SUBTASK_EXPANSION)
+            // Repeated, never comma separated: the server answers `expand=a,b` with 422.
+            if (collabSignals) {
+                parameter("expand", "comment_count")
+                parameter("expand", "is_unread")
+            }
             filters.forEach { (key, value) -> parameter(key, value) }
         }.bodyOrThrow()
 
@@ -97,8 +112,9 @@ class VikunjaApiService(
     suspend fun getAllTasks(
         filters: Map<String, String> = emptyMap(),
         expandSubtasks: Boolean = true,
+        collabSignals: Boolean = false,
     ): List<TaskDto> =
-        fetchAllPages(filters) { params -> getTasksPage(params, expandSubtasks) }
+        fetchAllPages(filters) { params -> getTasksPage(params, expandSubtasks, collabSignals) }
 
     suspend fun getTask(id: Long): TaskDto =
         client.get("tasks/$id") {
@@ -128,6 +144,8 @@ class VikunjaApiService(
             },
         ) { params ->
             client.get("projects") {
+                // `max_permission`: what you may do in each project (cross-app semantics 9.1).
+                parameter("expand", "permissions")
                 params.forEach { (key, value) -> parameter(key, value) }
             }.bodyOrThrow()
         }
@@ -353,6 +371,127 @@ class VikunjaApiService(
 
     suspend fun serverLogout() {
         client.post("logout").requireStatus(HttpStatusCode.OK)
+    }
+
+    // --- Collaboration (docs/cross-app-semantics-v1.md section 9) ----------------------------
+
+    private fun itemsOf(element: JsonElement): JsonArray = when (element) {
+        is JsonArray -> element
+        is JsonObject -> element["items"] as? JsonArray ?: JsonArray(emptyList())
+        else -> JsonArray(emptyList())
+    }
+
+    /** Everyone who can see a project: the owner, direct shares, team members and parent shares. */
+    suspend fun searchProjectUsers(projectId: Long): List<UserDto> {
+        val element: JsonElement = client.get("projects/$projectId/users/search") { parameter("q", "") }.bodyOrThrow()
+        return itemsOf(element).map { json.decodeFromJsonElement(UserDto.serializer(), it) }
+    }
+
+    suspend fun getProjectUserShares(projectId: Long): List<ProjectUserShareDto> =
+        fetchAllPages { params ->
+            client.get("projects/$projectId/users") { params.forEach { (key, value) -> parameter(key, value) } }.bodyOrThrow()
+        }
+
+    suspend fun getProjectTeamShares(projectId: Long): List<ProjectTeamShareDto> =
+        fetchAllPages { params ->
+            client.get("projects/$projectId/teams") { params.forEach { (key, value) -> parameter(key, value) } }.bodyOrThrow()
+        }
+
+    /** Find people by exact username (names and emails only match people who made themselves discoverable). */
+    suspend fun searchUsers(query: String): List<UserDto> {
+        val element: JsonElement = client.get("users") { parameter("q", query) }.bodyOrThrow()
+        return itemsOf(element).map { json.decodeFromJsonElement(UserDto.serializer(), it) }
+    }
+
+    suspend fun shareProject(projectId: Long, username: String, permission: Int) = serialWrite {
+        client.post("projects/$projectId/users") {
+            contentType(ContentType.Application.Json)
+            setBody(ShareUserDto(username, permission))
+        }.requireSuccess()
+    }
+
+    suspend fun updateProjectShare(projectId: Long, username: String, permission: Int) = serialWrite {
+        client.put("projects/$projectId/users/${username.encodeURLPathPart()}") {
+            contentType(ContentType.Application.Json)
+            setBody(PermissionDto(permission))
+        }.requireSuccess()
+    }
+
+    suspend fun removeProjectShare(projectId: Long, username: String) = serialWrite {
+        client.delete("projects/$projectId/users/${username.encodeURLPathPart()}").requireSuccess()
+    }
+
+    /** Assign someone; already assigned (400, code 4021) counts as done. */
+    suspend fun addAssignee(taskId: Long, userId: Long) = serialWrite {
+        val response = client.post("tasks/$taskId/assignees") {
+            contentType(ContentType.Application.Json)
+            setBody(AssigneeDto(userId))
+        }
+        if (response.status.value !in 200..299) {
+            val error = response.toApiException()
+            if (error.problem?.code != ERROR_ALREADY_ASSIGNED) throw error
+        } else {
+            response.bodyAsText()
+        }
+    }
+
+    /** Unassign someone (idempotent on the server). */
+    suspend fun removeAssignee(taskId: Long, userId: Long) = serialWrite {
+        client.delete("tasks/$taskId/assignees/$userId").requireSuccess()
+    }
+
+    /** One page of a task's comments, newest first. */
+    suspend fun getTaskCommentsPage(taskId: Long, page: Int): PaginatedResponse<TaskCommentDto> =
+        client.get("tasks/$taskId/comments") {
+            parameter("order_by", "desc")
+            parameter("per_page", COMMENT_PAGE_SIZE)
+            parameter("page", page)
+        }.bodyOrThrow()
+
+    suspend fun createComment(taskId: Long, html: String): TaskCommentDto = serialWrite {
+        client.post("tasks/$taskId/comments") {
+            contentType(ContentType.Application.Json)
+            setBody(CommentBodyDto(html))
+        }.bodyOrThrow()
+    }
+
+    suspend fun updateComment(taskId: Long, commentId: Long, html: String): TaskCommentDto = serialWrite {
+        client.patch("tasks/$taskId/comments/$commentId") {
+            contentType(MERGE_PATCH)
+            setBody(CommentBodyDto(html))
+        }.bodyOrThrow()
+    }
+
+    suspend fun deleteComment(taskId: Long, commentId: Long) = serialWrite {
+        client.delete("tasks/$taskId/comments/$commentId").requireSuccess()
+    }
+
+    /** Clear your unread flag on a task (idempotent). */
+    suspend fun markTaskRead(taskId: Long) {
+        client.put("tasks/$taskId/read").requireSuccess()
+    }
+
+    /** Whether you follow a task (`task.subscription` is only on a single-task read). */
+    suspend fun isSubscribed(taskId: Long): Boolean {
+        val response = client.get("tasks/$taskId")
+        response.ensureSuccess()
+        return json.decodeFromString(TaskSubscriptionReadDto.serializer(), response.bodyAsText()).subscription != null
+    }
+
+    /** Follow or stop following a task; following twice (412, code 12002) counts as done. */
+    suspend fun setSubscribed(taskId: Long, subscribed: Boolean) {
+        val response = if (subscribed) client.post("subscriptions/task/$taskId") else client.delete("subscriptions/task/$taskId")
+        if (response.status.value !in 200..299) {
+            val error = response.toApiException()
+            if (!(subscribed && error.problem?.code == ERROR_ALREADY_SUBSCRIBED)) throw error
+        } else {
+            response.bodyAsText()
+        }
+    }
+
+    private suspend fun HttpResponse.requireSuccess() {
+        ensureSuccess()
+        bodyAsText()
     }
 
     private suspend fun <T> fetchAllPages(

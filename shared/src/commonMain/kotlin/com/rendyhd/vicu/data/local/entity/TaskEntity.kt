@@ -55,4 +55,7 @@ data class TaskEntity(
      */
     @ColumnInfo(defaultValue = "0")
     val isMetadata: Boolean = CustomListEnvelope.isAnyMetadataTask(description),
+    /** Who the task is assigned to, as JSON `UserDto`s in the server's order (cross-app semantics 9.2). */
+    @ColumnInfo(defaultValue = "[]")
+    val assigneesJson: String = "[]",
 )

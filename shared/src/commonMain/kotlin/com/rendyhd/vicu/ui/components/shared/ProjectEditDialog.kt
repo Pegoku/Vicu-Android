@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -102,7 +105,8 @@ fun ProjectEditDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (isEdit) "Edit Project" else "Create Project") },
         text = {
-            Column {
+            // The sharing section can make the dialog taller than the screen.
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -207,6 +211,11 @@ fun ProjectEditDialog(
                                 .clickable { selectedColor = hex },
                         )
                     }
+                }
+
+                // Sharing applies at once, apart from Save (admins of an existing project only).
+                if (project != null) {
+                    ProjectSharingSection(project = project, modifier = Modifier.padding(top = 24.dp))
                 }
             }
         },

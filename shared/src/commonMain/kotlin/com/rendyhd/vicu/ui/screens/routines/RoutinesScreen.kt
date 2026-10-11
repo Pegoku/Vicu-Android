@@ -86,7 +86,7 @@ import com.rendyhd.vicu.ui.components.shared.EmptyState
 import com.rendyhd.vicu.ui.components.shared.LocalFabAlignStart
 import com.rendyhd.vicu.ui.components.shared.copyPlainText
 import com.rendyhd.vicu.ui.components.shared.LocalToday
-import com.rendyhd.vicu.ui.components.shared.VicuFab
+import com.rendyhd.vicu.ui.components.shared.ScreenFab
 import com.rendyhd.vicu.ui.components.shared.VicuTopAppBar
 import org.koin.compose.viewmodel.koinViewModel
 import com.rendyhd.vicu.ui.components.shared.LocalDateFormat
@@ -169,7 +169,7 @@ fun RoutinesScreen(
             )
         },
         floatingActionButton = {
-            VicuFab(
+            ScreenFab(
                 onClick = {
                     editorRoutine = null
                     showEditor = true
