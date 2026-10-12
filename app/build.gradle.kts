@@ -58,6 +58,17 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
+        create("fork") {
+            // This fork's build: the release build under its own applicationId and name
+            // ("Vicu Fork", src/fork), so it installs beside the official app. Signed with the
+            // debug key, so it builds without keystore.properties; reinstalls keep its data
+            // only on the machine whose debug key signed it.
+            initWith(getByName("release"))
+            applicationIdSuffix = ".fork"
+            versionNameSuffix = "-fork"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
         debug {
             // Separate applicationId so debug installs side-by-side with the
             // release/beta build instead of hitting INSTALL_FAILED_UPDATE_INCOMPATIBLE.
